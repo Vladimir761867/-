@@ -1,0 +1,11 @@
+{
+  "updated": "13 ноября 2026",
+  "stats": {"mockups": 4, "version": "0.1", "release": "концепт"},
+  "roadmap": [
+    {"title": "Концепция и позиционирование", "status": "done"},
+    {"title": "Основные игровые экраны", "status": "done"},
+    {"title": "Интерактивные макеты", "status": "current"},
+    {"title": "Игровой прототип полёта", "status": "next"},
+    {"title": "Ангар и платные самолёты", "status": "next"}
+  ]
+}
