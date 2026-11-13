@@ -6,14 +6,15 @@
   <meta name="theme-color" content="#07111f">
   <title>Afterburn Skies — Форсаж Небес</title>
   <link rel="stylesheet" href="game.css?v=030">
-  <link rel="stylesheet" href="sectors.css?v=030">
+  <link rel="stylesheet" href="sectors.css?v=040">
+  <link rel="stylesheet" href="premium.css?v=040">
 </head>
 <body>
   <div class="game-shell">
     <header class="game-topbar">
       <a class="back-link" href="../" aria-label="Командный центр">← <span>Командный центр</span></a>
       <div class="game-brand"><span class="brand-spark" aria-hidden="true">✦</span><span>AFTERBURN <b>SKIES</b></span></div>
-      <span class="build-label">СБОРКА <b>0.3</b></span>
+      <span class="build-label">СБОРКА <b>0.4</b></span>
     </header>
     <main>
       <section id="hangar-screen" class="game-screen active" aria-labelledby="hangar-title">
@@ -21,17 +22,15 @@
           <div><p class="eyebrow">AFTERBURN SKIES / АНГАР</p>
           <h1 id="hangar-title">Форсаж <em>Небес</em></h1>
           <p class="screen-lead">Выбери сектор и подними самолёт в небо.</p></div>
-          <button id="sound-button" class="quiet-button" type="button" aria-pressed="false">Звук: выкл.</button>
+          <div class="hangar-actions">
+            <button id="shop-button" class="quiet-button shop-entry" type="button">Премиум-ангар <span aria-hidden="true">↗</span></button>
+            <button id="sound-button" class="quiet-button" type="button" aria-pressed="false">Звук: выкл.</button>
+          </div>
         </div>
         <div class="hangar-layout">
           <div class="hangar-stage" id="hangar-stage">
             <div class="stage-grid"></div><div class="stage-sun"></div>
-            <svg class="airframe-art" id="airframe-art" viewBox="-60 -56 120 112" aria-hidden="true">
-              <defs><linearGradient id="hull-light" x1="0" y1="0" x2="1" y2="1"><stop id="hull-bright"/><stop id="hull-dark" offset="100%"/></linearGradient></defs>
-              <polygon id="hull-outline" fill="url(#hull-light)" stroke-width=".65"/>
-              <path d="M0 -32 L5 -11 L0 0 L-5 -11Z" fill="#081827"/>
-              <path d="M-5 22L-5 28M5 22L5 28" stroke="#ffe1ae" stroke-width="2"/>
-            </svg>
+            <div class="airframe-art" id="airframe-art" aria-hidden="true"></div>
             <div class="stage-caption"><span id="stage-role">БАЗОВЫЙ САМОЛЁТ</span><strong id="stage-name">AZ-01</strong></div>
           </div>
           <div class="hangar-info">
@@ -45,6 +44,17 @@
           </div>
         </div>
       </section>
+      <section id="premium-screen" class="game-screen" aria-labelledby="premium-title" hidden>
+        <div class="premium-header">
+          <button id="premium-back" class="text-button" type="button">← В ангар</button>
+          <h1 id="premium-title" tabindex="-1">Премиум-ангар</h1>
+          <p class="screen-lead">Выбери силуэт и испытай его в свободном полёте. Открытый самолёт доступен на всех маршрутах с теми же лётными характеристиками.</p>
+          <p class="premium-note">Тестовая витрина. Самолёты открываются бесплатно в этом браузере.</p>
+        </div>
+        <div id="premium-cards" class="premium-cards"></div>
+        <div id="premium-bundle" class="premium-bundle"></div>
+        <p id="premium-feedback" class="selection-copy" role="status"></p>
+      </section>
       <section id="briefing-screen" class="game-screen" aria-labelledby="briefing-title" hidden>
         <div class="briefing-wrap">
           <p class="eyebrow" id="briefing-label"></p>
@@ -52,7 +62,7 @@
           <p id="briefing-description" class="screen-lead"></p>
           <div class="briefing-card"><span class="mission-icon" aria-hidden="true">◎</span><div><b id="briefing-plane"></b><p id="briefing-controls"></p></div><span id="briefing-time" class="briefing-time"></span></div>
           <div class="briefing-steps" id="briefing-bonuses">✚ Ремонт восстанавливает энергию · ✦ Заряд продлевает серию</div>
-          <div class="briefing-actions"><button id="start-mission" class="primary-button" type="button">НАЧАТЬ ВЫЛЕТ <span aria-hidden="true">→</span></button><button id="back-hangar" class="text-button" type="button">← В ангар</button></div>
+          <div class="briefing-actions"><button id="start-mission" class="primary-button" type="button">НАЧАТЬ ВЫЛЕТ <span aria-hidden="true">→</span></button><button id="back-hangar" class="text-button" type="button">← Назад</button></div>
         </div>
       </section>
       <section id="flight-screen" class="game-screen flight-screen" hidden aria-label="Игровой вылет">
@@ -96,10 +106,11 @@
         </div>
       </section>
     </main>
-    <footer class="game-footer"><span>AFTERBURN SKIES / 0.3</span><a href="../mockups/">Макеты</a><span id="save-status">Рекорды хранятся в этом браузере</span></footer>
+    <footer class="game-footer"><span>AFTERBURN SKIES / 0.4</span><a href="../mockups/">Макеты</a><span id="save-status">Рекорды хранятся в этом браузере</span></footer>
   </div>
-  <script src="content.js?v=030"></script>
-  <script src="scene.js?v=030"></script>
-  <script src="game.js?v=030"></script>
+  <script src="content.js?v=040"></script>
+  <script src="scene.js?v=040"></script>
+  <script src="premium.js?v=040"></script>
+  <script src="game.js?v=040"></script>
 </body>
 </html>

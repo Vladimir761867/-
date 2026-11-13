@@ -1,27 +1,31 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const canvas = $('flight-canvas'), ctx = canvas.getContext('2d');
-const screenIds = ['hangar', 'briefing', 'flight', 'result'];
+const screenIds = ['hangar', 'premium', 'briefing', 'flight', 'result'];
 const keys = new Set();
 const storageKey = 'afterburn-sector-records-v1';
 let records = {}, canSave = true, sound = false, audio;
 try { records = JSON.parse(localStorage.getItem(storageKey) || '{}') || {}; } catch { records = {}; }
 if (typeof records !== 'object' || Array.isArray(records)) records = {};
 let planeId = 'az', sectorId = 'light', screen = 'hangar', run, frame, last, messageUntil = 0;
+let briefingBack = 'hangar', engineAudio;
 let width = 1, height = 1, pointer = null, firePointer = false;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const nfmt = new Intl.NumberFormat('ru-RU');
 const put = (id, value) => { const node = $(id); value = String(value); if (node.textContent !== value) node.textContent = value; };
 const sector = () => sectors[sectorId];
 const isFree = () => sectorId === 'free';
-const flightPlane = () => airframes[isFree() ? planeId : 'az'];
+const flightPlane = () => airframes[isFree() || isUnlocked(planeId) ? planeId : 'az'];
 const isFlying = () => screen === 'flight' && run && !run.paused;
 
 function showScreen(next, focus) {
   screen = next;
   for (const id of screenIds) $(id + '-screen').hidden = next !== id;
   document.body.classList.toggle('in-flight', next === 'flight');
-  if (next !== 'flight') cancelAnimationFrame(frame);
+  if (next !== 'flight') {
+    cancelAnimationFrame(frame);
+    stopEngine();
+  }
   window.scrollTo(0, 0);
   if (focus) $(focus).focus({preventScroll:true});
 }
@@ -35,9 +39,12 @@ function makeChoices() {
     button.firstElementChild.style.background = plane.body;
     button.firstElementChild.style.color = plane.color;
     button.querySelector('b').textContent = plane.name;
-    button.querySelector('small').textContent = plane.role;
     button.dataset.id = id;
-    button.onclick = () => { planeId = id; if (id !== 'az') sectorId = 'free'; renderHangar(); };
+    button.onclick = () => {
+      planeId = id;
+      if (!isUnlocked(id)) sectorId = 'free';
+      renderHangar();
+    };
     $('plane-picker').append(button);
   }
   for (const [id, item] of Object.entries(sectors)) {
@@ -57,18 +64,16 @@ function makeChoices() {
 function best(id) { return Number.isSafeInteger(records[id]) && records[id] > 0 ? records[id] : 0; }
 function renderHangar() {
   const plane = airframes[planeId];
-  put('stage-role', plane.role.toUpperCase());
+  put('stage-role', planeId === 'az' ? 'БАЗОВЫЙ САМОЛЁТ' : isUnlocked(planeId) ? 'ОТКРЫТ ДЛЯ ВСЕХ МАРШРУТОВ' : 'ДОСТУПНА ПРИМЕРКА');
   put('stage-name', plane.name);
   put('plane-description', plane.description);
   $('airframe-art').style.setProperty('--airframe-glow', plane.color);
-  $('hull-outline').setAttribute('points', plane.outline);
-  $('hull-outline').setAttribute('stroke', plane.color);
-  $('hull-bright').setAttribute('stop-color', plane.body);
-  $('hull-dark').setAttribute('stop-color', plane.shadow);
+  $('airframe-art').innerHTML = aircraftMarkup(plane, 'hangar-hull');
   for (const button of $('plane-picker').children) {
     const selected = button.dataset.id === planeId;
     button.classList.toggle('active', selected);
     button.setAttribute('aria-pressed', selected);
+    button.querySelector('small').textContent = isUnlocked(button.dataset.id) ? 'Все маршруты' : 'Свободная примерка';
     button.querySelector('em').textContent = selected ? 'выбран' : '';
   }
   for (const button of $('sector-picker').children) {
@@ -77,7 +82,7 @@ function renderHangar() {
     button.setAttribute('aria-pressed', selected);
     button.querySelector('.sector-record').textContent = id === 'free' || !best(id) ? '' : '✦ ' + nfmt.format(best(id));
   }
-  put('selection-hint', !isFree() && planeId !== 'az' ? 'Зачётный вылет на AZ-01. Выбранный самолёт доступен в свободном небе.' : '');
+  put('selection-hint', !isFree() && !isUnlocked(planeId) ? 'Вылет на AZ-01. Открыть выбранный самолёт можно в премиум-ангаре.' : '');
 }
 
 function openBriefing() {
@@ -117,10 +122,14 @@ function start() {
   for (const id of ['target-hud','fire-button','missile-button']) $(id).hidden = !battle;
   for (const id of ['time-hud','energy-hud']) $(id).hidden = isFree();
   $('end-free').hidden = !isFree();
+  const returnLabel = briefingBack === 'premium' ? 'В премиум-ангар' : 'В ангар';
+  put('end-free', returnLabel);
+  put('quit-button', returnLabel);
   put('flight-sector', 'СЕКТОР ' + sector().number);
   put('flight-title', sector().title);
   showScreen('flight', 'flight-canvas');
   resize();
+  startEngine();
   showMessage('Веди самолёт', battle ? 'Огонь включается при движении пальцем' : 'Наведи самолёт на кольцо', 2.6);
   hud();
   last = performance.now();
@@ -333,11 +342,17 @@ function finish(reason) {
 }
 
 function goHangar() {
+  if (location.hash === '#premium') history.replaceState(null, '', location.pathname + location.search);
   keys.clear();
   pointer = null;
   firePointer = false;
   renderHangar();
   showScreen('hangar', 'fly-button');
+}
+
+function leaveFlight() {
+  if (briefingBack === 'premium') openPremium();
+  else goHangar();
 }
 
 function loop(now) {
@@ -352,13 +367,39 @@ function pause() {
   $('pause-overlay').hidden = !run.paused;
   if (run.paused) {
     cancelAnimationFrame(frame);
+    stopEngine();
     keys.clear(); pointer = null; firePointer = false;
     $('resume-button').focus();
   } else {
     $('flight-canvas').focus({preventScroll:true});
+    startEngine();
     last = performance.now();
     frame = requestAnimationFrame(loop);
   }
+}
+function startEngine() {
+  if (!sound || !audio || audio.state !== 'running' || engineAudio) return;
+  const plane = flightPlane();
+  const oscillator = audio.createOscillator(), gain = audio.createGain(), filter = audio.createBiquadFilter();
+  const now = audio.currentTime;
+  oscillator.type = plane.roll === 'arc' ? 'triangle' : 'sawtooth';
+  oscillator.frequency.value = plane.engine || 60;
+  filter.type = 'lowpass';
+  filter.frequency.value = plane.roll === 'spiral' ? 220 : 135;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(.035, now + .22);
+  oscillator.connect(filter).connect(gain).connect(audio.destination);
+  oscillator.start();
+  engineAudio = {oscillator, gain};
+}
+function stopEngine() {
+  if (!engineAudio) return;
+  const {oscillator, gain} = engineAudio;
+  const now = audio.currentTime;
+  gain.gain.cancelScheduledValues(now);
+  gain.gain.setTargetAtTime(0, now, .025);
+  oscillator.stop(now + .12);
+  engineAudio = undefined;
 }
 function tone(type) {
   if (!sound || !audio || audio.state !== 'running') return;
@@ -425,12 +466,17 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keyup',e=>keys.delete(e.key));
 window.addEventListener('resize',()=>{ if (screen === 'flight') resize(); });
 document.addEventListener('visibilitychange',()=>{ if (document.hidden && isFlying()) pause(); });
-$('fly-button').onclick = openBriefing;
+$('fly-button').onclick = () => { briefingBack = 'hangar'; openBriefing(); };
+$('shop-button').onclick = openPremium;
+$('premium-back').onclick = goHangar;
+$('premium-cards').onclick = $('premium-bundle').onclick = onPremiumClick;
 $('start-mission').onclick = $('retry-button').onclick = start;
-$('back-hangar').onclick = $('quit-button').onclick = $('end-free').onclick = $('result-hangar').onclick = goHangar;
+$('back-hangar').onclick = $('quit-button').onclick = $('end-free').onclick = leaveFlight;
+$('result-hangar').onclick = goHangar;
 $('pause-button').onclick = $('resume-button').onclick = pause;
 $('trick-button').onclick = trick;
 $('missile-button').onclick = missile;
 $('sound-button').onclick = toggleSound;
 makeChoices();
 renderHangar();
+if (location.hash === '#premium') openPremium();

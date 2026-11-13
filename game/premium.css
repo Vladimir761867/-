@@ -1,0 +1,26 @@
+.hangar-actions{display:flex;flex-wrap:wrap;gap:8px}
+.shop-entry{border-color:#c6a2ff;color:#f0e0ff;background:#2a2240}
+.shop-entry span{margin-left:5px}
+.premium-header{margin-bottom:26px}
+.premium-header h1{font-size:clamp(36px,7vw,78px);letter-spacing:-.065em;line-height:1.02;margin:8px 0 12px}
+.premium-header .text-button{min-height:44px}
+.premium-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.premium-card{border:1px solid var(--line);border-radius:17px;overflow:hidden;background:#0d1a2a}
+.premium-art{height:clamp(180px,29vw,315px);position:relative;overflow:hidden;background:radial-gradient(ellipse at 65% 28%,var(--ambient),transparent 59%),linear-gradient(145deg,#142338,#080e1a 75%)}
+.premium-art::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(116deg,transparent 0 37px,#c0b4e61c 38px,transparent 39px 53px);mask-image:linear-gradient(0deg,#000,transparent 92%)}
+.premium-art svg{position:absolute;inset:50% auto auto 50%;width:clamp(175px,63%,280px);transform:translate(-50%,-50%) rotate(var(--angle));filter:drop-shadow(0 8px 9px #050712) drop-shadow(0 0 12px var(--ambient))}
+.premium-copy{padding:16px 18px 18px}
+.premium-copy h2,.premium-bundle h2{margin:0;font-size:clamp(21px,3.3vw,32px);letter-spacing:-.045em}
+.premium-copy p,.premium-bundle p{color:#adc1d1;margin:5px 0 8px;font-size:13px}
+.premium-copy .effect-copy{color:var(--accent)}
+.premium-copy .offer-price{color:#e9f1fb;font-weight:700;margin-top:12px}
+.premium-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.premium-actions button,.premium-bundle button{width:auto;min-height:44px;font-size:12px;letter-spacing:0}
+.premium-actions .primary-button{background:var(--accent)}
+.premium-actions .quiet-button,.premium-bundle .quiet-button{white-space:normal}
+.premium-bundle{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;border:1px solid #6f5e8d;border-radius:15px;padding:14px 18px;margin-top:16px;background:linear-gradient(110deg,#1b2440,#2b2333)}
+.premium-note{font-size:12px;color:#a9bdd0;margin:7px 0}
+#premium-feedback{margin:12px 0 0}
+#premium-feedback:empty{margin:0;min-height:0}
+.airframe-art svg{display:block;width:100%}
+@media(max-width:610px){.premium-cards{grid-template-columns:1fr}.premium-art{height:205px}.premium-art svg{width:min(73%,195px)}.premium-actions button{flex:1 1 140px}.premium-bundle button{width:100%}}

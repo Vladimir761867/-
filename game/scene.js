@@ -1,5 +1,18 @@
 'use strict';
 // All art is drawn with Canvas; there are no external textures, models or marks.
+const hullPaths = new Map();
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function airframePaths(plane) {
+  if (!hullPaths.has(plane)) {
+    const outline = new Path2D('M' + plane.outline + 'Z');
+    const panels = (plane.panels || []).map(panel => ({...panel, path:new Path2D(panel.shape)}));
+    const canopy = new Path2D(plane.canopy || 'M0 -32 5 -11 0 0 -5 -11Z');
+    const lights = new Path2D(plane.lights || 'M-5 22 -5 28 M5 22 5 28');
+    hullPaths.set(plane, {outline, panels, canopy, lights});
+  }
+  return hullPaths.get(plane);
+}
 function render() {
   const s = sector(), horizon = height * .49;
   const sky = ctx.createLinearGradient(0,0,0,height);
@@ -116,26 +129,70 @@ function drawGate(x,y) {
 }
 function drawAirframe() {
   const p=flightPlane();
+  const paths = airframePaths(p);
   ctx.save();ctx.translate(run.x*width,run.y*height);ctx.rotate(run.bank);
-  const scale=clamp(width/440,.55,.95);
-  const roll=run.rollEnd>run.t ? Math.cos((1-(run.rollEnd-run.t)/.48)*Math.PI*2) : 1;
-  ctx.scale(scale*(roll<0?-1:1)*Math.max(.22,Math.abs(roll)),scale);
-  ctx.globalAlpha=run.safeUntil>run.t?.65:1;
-  for(const x of [-6,6]) {
-    const trail=ctx.createLinearGradient(0,24,0,94);
-    trail.addColorStop(0,'#fff2c7');trail.addColorStop(.24,p.color);trail.addColorStop(1,'transparent');
-    ctx.strokeStyle=trail;ctx.lineWidth=3.2;ctx.beginPath();ctx.moveTo(x,25);
-    ctx.quadraticCurveTo(x-run.bank*23,55,x-run.bank*60,80+Math.sin(run.t*25+x)*9);ctx.stroke();
+  const scale = clamp(width/440,.55,.95);
+  ctx.scale(scale, scale);
+  if (p.roll && run.rollEnd + .65 > run.t && run.rollEnd > 0 && !reduceMotion.matches) {
+    drawRollEffect(p, 1 - (run.rollEnd + .65 - run.t) / 1.13);
   }
-  const hull=ctx.createLinearGradient(-22,-38,35,36);
-  hull.addColorStop(0,p.body);hull.addColorStop(1,p.shadow);
-  ctx.fillStyle=hull;ctx.strokeStyle=p.color;ctx.lineWidth=1.2;
+  const roll = run.rollEnd > run.t && !reduceMotion.matches ? Math.cos((1-(run.rollEnd-run.t)/.48)*Math.PI*2) : 1;
+  ctx.scale((roll < 0 ? -1 : 1) * Math.max(.22, Math.abs(roll)), 1);
+  const opacity = run.safeUntil > run.t ? .65 : 1;
+  ctx.globalAlpha = opacity;
+  for (const x of p.trail || [-6,6]) {
+    const end = p.roll === 'spiral' ? 121 : 99;
+    const start = p.roll === 'arc' ? 23 : 28;
+    const trail = ctx.createLinearGradient(0,start,0,end);
+    trail.addColorStop(0,'#fff2c7');
+    trail.addColorStop(.21,p.color);
+    trail.addColorStop(1,'transparent');
+    ctx.strokeStyle = trail;
+    ctx.lineWidth = p.roll === 'arc' ? 2.7 : 3.6;
+    ctx.beginPath();
+    ctx.moveTo(x,start);
+    ctx.quadraticCurveTo(x-run.bank*23,55,x-run.bank*60,end+(reduceMotion.matches ? 0 : Math.sin(run.t*22+x)*8));
+    ctx.stroke();
+  }
+  const hull = ctx.createLinearGradient(-22,-38,35,36);
+  hull.addColorStop(0,p.body);
+  hull.addColorStop(1,p.shadow);
+  ctx.fillStyle = hull;
+  ctx.fill(paths.outline);
+  for (const panel of paths.panels) {
+    ctx.globalAlpha = opacity * panel.alpha;
+    ctx.fillStyle = panel.color;
+    ctx.fill(panel.path);
+  }
+  ctx.globalAlpha = opacity;
+  ctx.strokeStyle = p.color;
+  ctx.lineWidth = 1.2;
+  ctx.lineJoin = 'round';
+  ctx.stroke(paths.outline);
+  ctx.fillStyle = '#081827';
+  ctx.fill(paths.canopy);
+  ctx.lineWidth = 1.6;
+  ctx.stroke(paths.lights);
+  ctx.restore();
+}
+
+function drawRollEffect(plane, progress) {
+  ctx.save();
+  ctx.globalAlpha = Math.sin(clamp(progress,0,1)*Math.PI)*.88;
+  ctx.strokeStyle = plane.color;
+  ctx.shadowColor = plane.color;
+  ctx.shadowBlur = 8;
+  ctx.lineWidth = 2.6;
   ctx.beginPath();
-  p.outline.split(' ').forEach((point,i)=>{
-    const [x,y]=point.split(',').map(Number);
-    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
-  });
-  ctx.closePath();ctx.fill();ctx.stroke();
-  ctx.fillStyle='#081827';ctx.beginPath();ctx.moveTo(0,-32);ctx.lineTo(5,-11);ctx.lineTo(0,0);ctx.lineTo(-5,-11);ctx.closePath();ctx.fill();
+  if (plane.roll === 'arc') {
+    ctx.ellipse(0,34+progress*26,58,20,-.47,Math.PI*.03,Math.PI*(.85+progress));
+  } else {
+    for (let i=0; i<=32; i++) {
+      const u=i/32;
+      const x=Math.sin(u*3.5*Math.PI-progress*5)*29*(1-u*.48), y=32+u*(66+progress*27);
+      if (!i) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+  }
+  ctx.stroke();
   ctx.restore();
 }
