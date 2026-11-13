@@ -1,5 +1,5 @@
 [
-  {"name":"Raptor-01","role":"Базовый перехватчик","price":"бесплатно","description":"Быстрый и понятный самолёт для обучения: пулемёт, ракеты и базовая бочка.","color":"#65ddff","background":"linear-gradient(145deg,#1b526d,#0b1a2d)"},
-  {"name":"Vanta X","role":"Премиум / стелс","price":"$1.99","description":"Тёмный корпус, тихий форсаж и эффектный след. Сильный визуальный образ без pay-to-win.","color":"#b993ff","background":"linear-gradient(145deg,#3c2d5e,#121329)"},
-  {"name":"Solaris GT","role":"Премиум / трюки","price":"$2.99","description":"Яркий пилотажный самолёт с особой бочкой и золотым следом после идеального манёвра.","color":"#ffb86b","background":"linear-gradient(145deg,#875333,#20182a)"}
+  {"name":"AZ-01","role":"Базовый самолёт","price":"бесплатно","description":"Светлый корпус, раздвоенный хвост и циановая подсветка. Доступен во всех секторах.","color":"#65ddff","background":"linear-gradient(145deg,#1b526d,#0b1a2d)"},
+  {"name":"NX-02","role":"Премиум · графит","price":"примерка","description":"Графитовый корпус, лиловый след и низкий звук. Доступен в свободном небе.","color":"#c6a2ff","background":"linear-gradient(145deg,#3c2d5e,#121329)"},
+  {"name":"SF-03","role":"Премиум · медь","price":"примерка","description":"Медные крылья, золотой след и яркий звук. Доступен в свободном небе.","color":"#ffc075","background":"linear-gradient(145deg,#875333,#20182a)"}
 ]

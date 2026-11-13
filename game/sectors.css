@@ -1,0 +1,42 @@
+body{min-width:0}
+[hidden]{display:none!important}
+button:focus-visible,a:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
+.screen-intro h1,.briefing-wrap h1,.result-wrap h1{font-size:clamp(37px,7vw,72px);line-height:1.02;overflow-wrap:anywhere}
+.screen-intro{margin-bottom:24px}
+.hangar-layout{gap:clamp(22px,5vw,65px);align-items:start}
+.hangar-stage{height:clamp(260px,44vw,470px);isolation:isolate}
+.hangar-stage:after{content:"";position:absolute;inset:12px;border:1px solid rgba(145,213,245,.13);border-radius:inherit;pointer-events:none}
+.airframe-art{position:absolute;left:50%;top:45%;width:min(76%,340px);transform:translate(-50%,-50%) rotate(24deg) scaleX(1.12);filter:drop-shadow(0 8px 8px #041322) drop-shadow(0 0 20px var(--airframe-glow,#65ddff))}
+.plane-picker,.sector-picker{display:grid;gap:7px;margin-bottom:9px}
+.plane-choice,.sector-choice{min-height:45px;touch-action:manipulation}
+.sector-choice{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;color:var(--text);text-align:left;padding:8px 10px;border-radius:10px;background:var(--panel);border:1px solid var(--line);cursor:pointer}
+.sector-choice:hover,.sector-choice.active{border-color:var(--cyan);background:#142f45}
+.sector-choice>span:first-child{color:var(--cyan);font-size:11px}.sector-choice b,.sector-choice small{display:block}.sector-choice small,.sector-choice>span:last-child{font-size:10px;color:#adc1d1}
+.selection-copy{margin:0 0 13px;color:#adc1d1;font-size:12px;min-height:1.5em}
+.quiet-button{border:1px solid rgba(180,221,244,.35);background:#11283d;color:var(--text);padding:10px 13px;border-radius:9px;min-height:44px;font:700 12px system-ui;cursor:pointer;white-space:nowrap}
+.briefing-time{white-space:nowrap}.briefing-card{min-width:0}.briefing-steps{font-size:12px;color:#adc1d1}
+body.in-flight .game-topbar,body.in-flight .game-footer{display:none}
+.flight-screen{padding:0!important}
+.flight-frame{height:100vh;height:100dvh;min-height:0}
+.flight-top-hud{top:max(10px,env(safe-area-inset-top));left:12px;right:12px;gap:6px;grid-template-columns:minmax(0,1fr) auto auto}
+.hud-block,.hud-score{background:rgba(5,15,29,.77);padding:5px 8px;min-width:0}
+.hud-block b{font-size:12px;margin:0}.hud-score strong{font-size:19px}
+.pause-button{height:44px;width:44px;background:#102333}
+.mission-hud{top:calc(max(10px,env(safe-area-inset-top)) + 56px);left:12px;right:12px;gap:4px;align-items:stretch;pointer-events:none}
+.mission-hud .hud-cell{padding:4px 5px;min-width:0;flex:1;background:rgba(5,15,29,.77);text-align:center}
+.hud-cell span,.hud-cell b{display:block;white-space:nowrap}
+.hud-cell span{font-size:8px;color:#d2e7f4}.hud-cell b{font-size:13px;font-variant-numeric:tabular-nums}
+.flight-controls{left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom))}
+.flight-controls .quiet-button{pointer-events:auto;align-self:end}
+.flight-message{max-width:calc(100% - 30px);width:max-content;top:32%;background:rgba(5,17,28,.76)}
+.flight-message.hidden{visibility:hidden}
+.control-button:disabled{opacity:.52;cursor:default}
+.pause-overlay{z-index:3}.pause-card .text-button,.result-actions .text-button,.briefing-actions .text-button{min-height:44px}
+.result-screen{padding-inline:clamp(12px,4vw,48px);border-radius:16px}.result-wrap:before{opacity:.24}
+.result-stats div{min-width:0}
+@media(max-width:600px){
+  .game-shell{padding-inline:14px}.game-topbar{gap:9px}.back-link:before{content:none}.back-link{font-size:18px}.back-link span{display:none}
+  .screen-intro{gap:12px}.game-screen{padding-top:24px}.hangar-layout{gap:18px}.hangar-stage{height:218px}.airframe-art{width:167px;top:40%}
+  .flight-screen{margin-inline:-14px}.flight-frame{min-height:0}.mission-hud{gap:3px}.hud-cell span{font-size:7.5px}
+  .control-button{width:54px;height:54px}.control-button.fire{width:65px;height:65px}.briefing-wrap,.result-wrap{padding-top:14px}
+}

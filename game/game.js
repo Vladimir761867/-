@@ -1,90 +1,436 @@
-const canvas = document.querySelector('#flight-canvas');
-const ctx = canvas.getContext('2d');
-const $ = (selector) => document.querySelector(selector);
-const screens = ['hangar-screen','briefing-screen','flight-screen','result-screen'];
-const planeData = {
-  raptor: {name:'Raptor-01', role:'универсальный перехватчик', description:'Быстрый и понятный самолёт для первого боя.', color:'#65ddff', wing:'#2785a4', stats:[82,76,64]},
-  vanta: {name:'Vanta X', role:'стелс / премиум', description:'Тёмный силуэт с тихим форсажем и фиолетовым следом.', color:'#b993ff', wing:'#7351ac', stats:[88,84,58]},
-  solaris: {name:'Solaris GT', role:'трюки / премиум', description:'Яркая машина для длинных серий и красивых бочек.', color:'#ffb86b', wing:'#b85c36', stats:[76,94,54]}
-};
-const state = {screen:'hangar-screen', plane:'raptor', score:0, targets:0, tricks:0, rings:0, energy:100, missiles:3, combo:1, comboTimer:0, missionTime:0, running:false, paused:false, firing:false, lastShot:0, lastSpawn:0, lastRing:1.7, messageTimer:3, pointer:{x:.5,y:.65,active:false}, player:{x:0,y:0,tilt:0,invulnerable:0}, enemies:[], bullets:[], particles:[], ringsList:[], clouds:[], stars:[], shake:0, resultShown:false};
-let raf = 0, lastFrame = 0, toastTimer = 0;
+'use strict';
+const $ = id => document.getElementById(id);
+const canvas = $('flight-canvas'), ctx = canvas.getContext('2d');
+const screenIds = ['hangar', 'briefing', 'flight', 'result'];
+const keys = new Set();
+const storageKey = 'afterburn-sector-records-v1';
+let records = {}, canSave = true, sound = false, audio;
+try { records = JSON.parse(localStorage.getItem(storageKey) || '{}') || {}; } catch { records = {}; }
+if (typeof records !== 'object' || Array.isArray(records)) records = {};
+let planeId = 'az', sectorId = 'light', screen = 'hangar', run, frame, last, messageUntil = 0;
+let width = 1, height = 1, pointer = null, firePointer = false;
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const nfmt = new Intl.NumberFormat('ru-RU');
+const put = (id, value) => { const node = $(id); value = String(value); if (node.textContent !== value) node.textContent = value; };
+const sector = () => sectors[sectorId];
+const isFree = () => sectorId === 'free';
+const flightPlane = () => airframes[isFree() ? planeId : 'az'];
+const isFlying = () => screen === 'flight' && run && !run.paused;
 
-function showScreen(id){
-  screens.forEach(screen => {const node = document.getElementById(screen); node.hidden = screen !== id; node.classList.toggle('active', screen === id);});
-  state.screen = id;
-  if(id === 'flight-screen'){resizeCanvas(); startLoop();}
-  if(id !== 'flight-screen'){state.running = false; cancelAnimationFrame(raf);}
-  window.scrollTo({top:0, behavior:'smooth'});
+function showScreen(next, focus) {
+  screen = next;
+  for (const id of screenIds) $(id + '-screen').hidden = next !== id;
+  document.body.classList.toggle('in-flight', next === 'flight');
+  if (next !== 'flight') cancelAnimationFrame(frame);
+  window.scrollTo(0, 0);
+  if (focus) $(focus).focus({preventScroll:true});
 }
-function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2200)}
-function setText(selector,value){const el=$(selector);if(!el)return;if(selector==='#result-title'){const lines=String(value).split('\n');el.innerHTML=lines.map((line,i)=>i?'<em>'+line+'</em>':line).join('<br>');return}el.textContent=value}
-function selectPlane(key){
-  if(key !== 'raptor'){toast('Премиальный самолёт пока в предпросмотре — скоро откроется.');return}
-  state.plane=key;const p=planeData[key];
-  document.querySelectorAll('.plane-choice').forEach(x=>x.classList.toggle('active',x.dataset.plane===key));
-  setText('#selected-plane-name',p.name.toUpperCase());setText('#selected-plane-role',p.role);setText('#plane-title',p.name);setText('#plane-description',p.description);
-  ['speed','maneuver','damage'].forEach((name,i)=>setText('#stat-'+name,p.stats[i]));
-  const visual=$('#showcase-plane');visual.style.setProperty('--plane-color',p.color);visual.style.setProperty('--plane-wing',p.wing);visual.style.boxShadow=`0 0 28px ${p.color}`;
-}
-function resetMission(){
-  Object.assign(state,{score:0,targets:0,tricks:0,rings:0,energy:100,missiles:3,combo:1,comboTimer:0,missionTime:0,running:true,paused:false,firing:false,lastShot:0,lastSpawn:0,lastRing:1.7,messageTimer:3,resultShown:false,shake:0});
-  state.enemies=[];state.bullets=[];state.particles=[];state.ringsList=[];state.pointer={x:.5,y:.65,active:false};
-  resizeCanvas();state.player={x:canvas.width/2,y:canvas.height*.72,tilt:0,invulnerable:0};seedSky();updateHud();hideMessage();showScreen('flight-screen');
-}
-function resizeCanvas(){const rect=canvas.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.max(320,Math.floor(rect.width*dpr));canvas.height=Math.max(560,Math.floor(rect.height*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);canvas._cssW=rect.width;canvas._cssH=rect.height}
-function W(){return canvas._cssW||canvas.clientWidth||window.innerWidth} function H(){return canvas._cssH||canvas.clientHeight||window.innerHeight}
-function seedSky(){state.stars=Array.from({length:55},()=>({x:Math.random(),y:Math.random()*.76,r:Math.random()*1.5+.3,a:Math.random()*.5+.2}));state.clouds=Array.from({length:8},()=>({x:Math.random()*1.3-.15,y:Math.random()*.62-.04,w:70+Math.random()*150,h:18+Math.random()*28,s:.2+Math.random()*.45}));}
-function startLoop(){if(!state.running)return;cancelAnimationFrame(raf);lastFrame=performance.now();raf=requestAnimationFrame(loop)}
-function loop(now){if(!state.running)return;const dt=Math.min((now-lastFrame)/1000,.035);lastFrame=now;if(!state.paused){update(dt);draw()}raf=requestAnimationFrame(loop)}
-function update(dt){
-  const w=W(),h=H();state.missionTime+=dt;state.player.invulnerable=Math.max(0,state.player.invulnerable-dt);state.shake=Math.max(0,state.shake-dt);state.comboTimer=Math.max(0,state.comboTimer-dt);if(state.comboTimer===0)state.combo=1;
-  const tx=state.pointer.active?state.pointer.x*w:w/2,ty=state.pointer.active?state.pointer.y*h:h*.72;state.player.x+=(tx-state.player.x)*Math.min(1,dt*7);state.player.y+=(ty-state.player.y)*Math.min(1,dt*5);state.player.x=Math.max(52,Math.min(w-52,state.player.x));state.player.y=Math.max(h*.42,Math.min(h*.82,state.player.y));state.player.tilt+=(Math.max(-.45,Math.min(.45,(tx-state.player.x)/120))-state.player.tilt)*Math.min(1,dt*8);
-  if(state.firing&&nowTime()-state.lastShot>.17){shoot();state.lastShot=nowTime()}
-  if(nowTime()-state.lastSpawn>1.15&&state.targets<7){spawnEnemy();state.lastSpawn=nowTime()}
-  state.lastRing-=dt;if(state.lastRing<=0&&state.rings<4){spawnRing();state.lastRing=3.7+Math.random()*2}
-  for(const e of state.enemies){e.y+=e.speed*dt;e.x+=Math.sin(e.phase+state.missionTime*1.8)*e.wave*dt;if(e.y>h+70)e.dead=true;if(Math.abs(e.y-state.player.y)<42&&Math.abs(e.x-state.player.x)<47&&!e.dead){if(state.player.invulnerable===0){hitPlayer();e.dead=true}}}
-  for(const b of state.bullets){b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;for(const e of state.enemies){if(e.dead)continue;const d=Math.hypot(b.x-e.x,b.y-e.y);if(d<28){destroyEnemy(e,false);b.life=0;break}}}
-  for(const r of state.ringsList){r.y+=r.speed*dt;if(!r.checked&&r.y>state.player.y-23){r.checked=true;const d=Math.abs(r.x-state.player.x);if(d<r.radius*.72){state.rings++;addScore(160);burst(r.x,r.y,'#ffcf79',18);showMessage('ЧИСТОЕ КОЛЬЦО','трюк продолжается',1.1)}else{state.combo=1}}if(r.y>h+90)r.dead=true}
-  state.enemies=state.enemies.filter(e=>!e.dead);state.bullets=state.bullets.filter(b=>b.life>0&&b.y>-40);state.ringsList=state.ringsList.filter(r=>!r.dead);
-  for(const p of state.particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.985;p.vy*=.985;p.life-=dt;p.size*=.995}
-  state.particles=state.particles.filter(p=>p.life>0);
-  if(state.messageTimer>0){state.messageTimer-=dt;if(state.messageTimer<=0)hideMessage()}
-  updateHud();if(state.targets>=5&&state.rings>=2&&state.missionTime>8){finishMission()}else if(state.missionTime>45){finishMission()}
-}
-function nowTime(){return performance.now()/1000}
-function spawnEnemy(){const w=W();state.enemies.push({x:65+Math.random()*(w-130),y:-45,speed:55+Math.random()*35,wave:12+Math.random()*20,phase:Math.random()*6.2,type:Math.random()>.7?'ace':'drone',hp:1,dead:false})}
-function spawnRing(){state.ringsList.push({x:80+Math.random()*(W()-160),y:-80,radius:44+Math.random()*12,speed:75+Math.random()*15,checked:false,dead:false})}
-function shoot(){const target=state.enemies.filter(e=>!e.dead).sort((a,b)=>Math.abs(a.x-state.player.x)+Math.abs(a.y-state.player.y)-Math.abs(b.x-state.player.x)-Math.abs(b.y-state.player.y))[0];const tx=target?target.x:state.player.x,ty=target?target.y:0;const angle=Math.atan2(ty-state.player.y,tx-state.player.x);state.bullets.push({x:state.player.x,y:state.player.y-24,vx:Math.cos(angle)*420,vy:Math.sin(angle)*420,life:1.2});addScore(2);burst(state.player.x,state.player.y-20,'#ffd18f',2)}
-function launchMissile(){if(state.missiles<=0){toast('Ракеты закончились');return}const target=state.enemies.filter(e=>!e.dead).sort((a,b)=>a.y-b.y)[0];if(!target){toast('Цель ещё не в зоне захвата');return}state.missiles--;target.dead=true;state.targets++;addScore(280);state.combo=Math.min(5,state.combo+1);state.comboTimer=3.2;burst(target.x,target.y,'#ff9d5c',28);showMessage('ПРЯМОЕ ПОПАДАНИЕ','ракета в цели',1.1);updateHud()}
-function trick(){if(state.player.invulnerable>0)return;state.tricks++;state.player.invulnerable=1.15;state.combo=Math.min(5,state.combo+1);state.comboTimer=3.2;addScore(180);burst(state.player.x,state.player.y,'#65ddff',20);showMessage('ИММЕЛЬМАН','идеальный манёвр',1.15)}
-function destroyEnemy(enemy,missile){if(enemy.dead)return;enemy.dead=true;state.targets++;state.combo=Math.min(5,state.combo+1);state.comboTimer=3.2;addScore((missile?280:120)*state.combo);burst(enemy.x,enemy.y,enemy.type==='ace'?'#ff9d5c':'#65ddff',enemy.type==='ace'?28:17);showMessage(enemy.type==='ace'?'ЛИДЕР СБИТ':'ЦЕЛЬ СБИТА','серия x'+state.combo,0.8)}
-function hitPlayer(){state.energy=Math.max(0,state.energy-24);state.combo=1;state.comboTimer=0;state.player.invulnerable=1.3;state.shake=.35;burst(state.player.x,state.player.y,'#ff7f73',20);showMessage('ПОПАДАНИЕ','держи высоту',1);if(state.energy<=0){finishMission(true)}}
-function addScore(amount){state.score+=Math.round(amount)}
-function burst(x,y,color,count){for(let i=0;i<count;i++){const a=Math.random()*Math.PI*2,s=35+Math.random()*150;state.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.35+Math.random()*.65,size:2+Math.random()*4,color})}}
-function showMessage(main,sub,time){const el=$('#flight-message');el.classList.remove('hidden');el.querySelector('span').textContent=main;el.querySelector('small').textContent=sub;state.messageTimer=time}
-function hideMessage(){$('#flight-message').classList.add('hidden')}
-function updateHud(){setText('#score-value',String(state.score).padStart(6,'0'));setText('#target-value',String(Math.min(state.targets,5)).padStart(2,'0')+' / 05');setText('#energy-value',String(Math.max(0,Math.round(state.energy))));$('#energy-bar').style.width=Math.max(0,state.energy)+'%';setText('#combo-value','x'+state.combo);$('#combo-bar').style.width=Math.min(100,state.combo*20)+'%';setText('#missile-count',state.missiles)}
-function draw(){
-  const w=W(),h=H();ctx.save();if(state.shake>0)ctx.translate((Math.random()-.5)*8,(Math.random()-.5)*8);drawSky(w,h);drawAtmosphere(w,h);for(const r of state.ringsList)drawRing(r);for(const e of state.enemies)drawEnemy(e);drawTargetLock();for(const b of state.bullets)drawBullet(b);drawPlayerTrail();drawPlayer(w,h);for(const p of state.particles)drawParticle(p);ctx.restore();
-}
-function drawSky(w,h){const gradient=ctx.createLinearGradient(0,0,0,h);gradient.addColorStop(0,'#173d57');gradient.addColorStop(.48,'#6f9eaa');gradient.addColorStop(.51,'#a8c3bf');gradient.addColorStop(1,'#19323e');ctx.fillStyle=gradient;ctx.fillRect(0,0,w,h);const sun=ctx.createRadialGradient(w*.78,h*.2,2,w*.78,h*.2,150);sun.addColorStop(0,'rgba(255,241,190,.95)');sun.addColorStop(.22,'rgba(255,185,105,.42)');sun.addColorStop(1,'transparent');ctx.fillStyle=sun;ctx.fillRect(0,0,w,h);for(const s of state.stars){ctx.globalAlpha=s.a;ctx.fillStyle='#d9f6ff';ctx.beginPath();ctx.arc(s.x*w,s.y*h,s.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;for(const c of state.clouds){const x=(c.x*w-state.missionTime*16*c.s)%(w+c.w*2)-c.w;const y=c.y*h;const cg=ctx.createRadialGradient(x+c.w*.5,y,2,x+c.w*.5,y,c.w*.7);cg.addColorStop(0,'rgba(255,255,255,.36)');cg.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=cg;ctx.beginPath();ctx.ellipse(x+c.w*.5,y,c.w*.72,c.h,0,0,Math.PI*2);ctx.fill()}ctx.strokeStyle='rgba(224,246,235,.18)';ctx.lineWidth=1;for(let i=0;i<5;i++){const y=h*.54+i*55+((state.missionTime*32)%55);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y+50);ctx.stroke()}}
-function drawAtmosphere(w,h){const horizon=h*.56;ctx.save();ctx.globalAlpha=.26;ctx.fillStyle='#173443';ctx.beginPath();ctx.moveTo(0,horizon+22);for(let x=0;x<=w;x+=45)ctx.lineTo(x,horizon-18-Math.sin(x*.012)*18-Math.sin(x*.035)*9);ctx.lineTo(w,h);ctx.lineTo(0,h);ctx.closePath();ctx.fill();ctx.globalAlpha=.18;ctx.strokeStyle='#d9f6ff';ctx.lineWidth=1;for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(w*.58+i*26,horizon+24);ctx.lineTo(w*.1+i*40,horizon+95+i*15);ctx.stroke()}ctx.restore()}
-function drawRing(r){ctx.save();ctx.translate(r.x,r.y);ctx.rotate(state.missionTime*.7);ctx.strokeStyle='rgba(255,203,119,.95)';ctx.lineWidth=4;ctx.shadowColor='#ff9d5c';ctx.shadowBlur=15;ctx.beginPath();ctx.arc(0,0,r.radius,0,Math.PI*2);ctx.stroke();ctx.strokeStyle='rgba(255,247,216,.6)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,0,r.radius-9,0,Math.PI*2);ctx.stroke();ctx.restore()}
-function drawEnemy(e){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(Math.sin(e.phase+state.missionTime)*.1);ctx.shadowColor=e.type==='ace'?'#ff9d5c':'#ff7f73';ctx.shadowBlur=13;ctx.fillStyle=e.type==='ace'?'#e77b55':'#bf5961';ctx.beginPath();ctx.moveTo(-25,0);ctx.lineTo(26,-8);ctx.lineTo(13,2);ctx.lineTo(28,12);ctx.lineTo(-16,7);ctx.closePath();ctx.fill();ctx.fillStyle='#ffe7d1';ctx.beginPath();ctx.ellipse(-4,-2,6,3,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=e.type==='ace'?'#ffb26e':'#ff967c';ctx.fillRect(25,-2,6,4);ctx.restore()}
-function drawTargetLock(){const target=state.enemies.filter(e=>!e.dead).sort((a,b)=>Math.abs(a.y-state.player.y)-Math.abs(b.y-state.player.y))[0];if(!target)return;const pulse=1+Math.sin(state.missionTime*5)*.08,r=30*pulse;ctx.save();ctx.translate(target.x,target.y);ctx.strokeStyle='rgba(255,240,190,.9)';ctx.lineWidth=2;ctx.shadowColor='#ff9d5c';ctx.shadowBlur=12;for(let i=0;i<4;i++){const a=i*Math.PI/2+.12;ctx.beginPath();ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);ctx.lineTo(Math.cos(a)*r*.55,Math.sin(a)*r*.55);ctx.stroke()}ctx.font='700 8px Inter, sans-serif';ctx.letterSpacing='2px';ctx.fillStyle='#fff1c4';ctx.fillText('LOCK',-14,-38);ctx.restore()}
-function drawBullet(b){ctx.save();ctx.strokeStyle='#ffe9b9';ctx.lineWidth=2;ctx.shadowColor='#ffb86b';ctx.shadowBlur=10;ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x-b.vx*.035,b.y-b.vy*.035);ctx.stroke();ctx.restore()}
-function drawPlayerTrail(){const p=state.player;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.tilt);const flicker=10+Math.sin(state.missionTime*18)*3;for(let i=0;i<4;i++){ctx.globalAlpha=.3-i*.055;ctx.strokeStyle=i%2?'#65ddff':'#ff9d5c';ctx.lineWidth=3-i*.45;ctx.beginPath();ctx.moveTo(-48,-i*3);ctx.lineTo(-95-flicker-i*12,-i*7);ctx.stroke();}ctx.restore()}
-function drawPlayer(w,h){const p=state.player;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.tilt);if(p.invulnerable>0&&Math.floor(nowTime()*14)%2===0)ctx.globalAlpha=.45;ctx.shadowColor=planeData[state.plane].color;ctx.shadowBlur=22;ctx.fillStyle='#effaff';ctx.beginPath();ctx.moveTo(-50,0);ctx.lineTo(46,-7);ctx.lineTo(57,0);ctx.lineTo(42,7);ctx.lineTo(-42,5);ctx.closePath();ctx.fill();ctx.fillStyle=planeData[state.plane].wing;ctx.beginPath();ctx.moveTo(-10,-3);ctx.lineTo(27,-45);ctx.lineTo(13,2);ctx.lineTo(30,38);ctx.closePath();ctx.fill();ctx.fillStyle='#091827';ctx.beginPath();ctx.ellipse(18,-2,13,5,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ff9d5c';ctx.shadowColor='#ff9d5c';ctx.beginPath();ctx.moveTo(-51,0);ctx.lineTo(-79,-7);ctx.lineTo(-59,0);ctx.lineTo(-79,7);ctx.closePath();ctx.fill();ctx.restore()}
-function drawParticle(p){ctx.save();ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.color;ctx.shadowColor=p.color;ctx.shadowBlur=10;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.restore()}
-function finishMission(failed=false){if(state.resultShown)return;state.resultShown=true;state.running=false;cancelAnimationFrame(raf);if(!failed){addScore(state.rings*100+state.tricks*75+Math.round(state.energy*2))}setText('#result-score',String(state.score).padStart(6,'0'));setText('#result-targets',String(state.targets).padStart(2,'0'));setText('#result-tricks',String(state.tricks).padStart(2,'0'));setText('#result-rings',String(state.rings).padStart(2,'0'));setText('#result-energy',Math.round(state.energy)+'%');setText('#result-title',failed?'Возвращайся\nсильнее.':'Чистое\nнебо.');setText('#result-copy',failed?'Самолёт выдержал. Следующий вылет будет точнее.':'Линия света пройдена. Хороший первый вылет.');$('#result-medal').innerHTML=failed?'↻<small>B</small>':state.score>2500?'✦<small>S</small>':'✦<small>A</small>';showScreen('result-screen')}
-function setPointer(event){const rect=canvas.getBoundingClientRect();const point=event.touches?event.touches[0]:event;state.pointer={x:Math.max(0,Math.min(1,(point.clientX-rect.left)/rect.width)),y:Math.max(.35,Math.min(.84,(point.clientY-rect.top)/rect.height)),active:true}}
 
-document.querySelectorAll('.plane-choice').forEach(btn=>btn.addEventListener('click',()=>selectPlane(btn.dataset.plane)));
-$('#fly-button').addEventListener('click',()=>showScreen('briefing-screen'));$('#back-hangar').addEventListener('click',()=>showScreen('hangar-screen'));$('#start-mission').addEventListener('click',resetMission);$('#retry-button').addEventListener('click',resetMission);$('#result-hangar').addEventListener('click',()=>showScreen('hangar-screen'));
-canvas.addEventListener('pointerdown',e=>{setPointer(e);canvas.setPointerCapture?.(e.pointerId)});canvas.addEventListener('pointermove',e=>{if(e.buttons||e.pointerType==='touch')setPointer(e)});canvas.addEventListener('pointerup',()=>{state.pointer.active=false});canvas.addEventListener('pointercancel',()=>{state.pointer.active=false});
-function holdButton(button,down,up){button.addEventListener('pointerdown',e=>{e.preventDefault();button.classList.add('active');down()});['pointerup','pointercancel','pointerleave'].forEach(type=>button.addEventListener(type,()=>{button.classList.remove('active');up?.()}))}
-holdButton($('#fire-button'),()=>{state.firing=true},()=>{state.firing=false});$('#missile-button').addEventListener('click',launchMissile);$('#trick-button').addEventListener('click',trick);
-$('#pause-button').addEventListener('click',()=>{state.paused=true;$('#pause-overlay').hidden=false});$('#resume-button').addEventListener('click',()=>{state.paused=false;$('#pause-overlay').hidden=true;lastFrame=performance.now()});$('#quit-button').addEventListener('click',()=>{state.paused=false;$('#pause-overlay').hidden=true;showScreen('hangar-screen')});
-window.addEventListener('resize',()=>{if(state.screen==='flight-screen')resizeCanvas()});window.addEventListener('keydown',e=>{if(state.screen!=='flight-screen')return;if(e.key==='ArrowLeft')state.pointer={x:Math.max(0,state.pointer.x-.08),y:state.pointer.y,active:true};if(e.key==='ArrowRight')state.pointer={x:Math.min(1,state.pointer.x+.08),y:state.pointer.y,active:true};if(e.key===' ')state.firing=true;if(e.key.toLowerCase()==='e')trick();if(e.key.toLowerCase()==='r')launchMissile();if(e.key==='Escape'){$('#pause-button').click()}});window.addEventListener('keyup',e=>{if(e.key===' ')state.firing=false});
-selectPlane('raptor');seedSky();
+function makeChoices() {
+  for (const [id, plane] of Object.entries(airframes)) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'plane-choice';
+    button.innerHTML = '<span class="choice-swatch"></span><span><b></b><small></small></span><em></em>';
+    button.firstElementChild.style.background = plane.body;
+    button.firstElementChild.style.color = plane.color;
+    button.querySelector('b').textContent = plane.name;
+    button.querySelector('small').textContent = plane.role;
+    button.dataset.id = id;
+    button.onclick = () => { planeId = id; if (id !== 'az') sectorId = 'free'; renderHangar(); };
+    $('plane-picker').append(button);
+  }
+  for (const [id, item] of Object.entries(sectors)) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'sector-choice';
+    button.innerHTML = '<span></span><span><b></b><small></small></span><span class="sector-record"></span>';
+    button.firstElementChild.textContent = item.number;
+    button.querySelector('b').textContent = item.title;
+    button.querySelector('small').textContent = item.label;
+    button.dataset.id = id;
+    button.onclick = () => { sectorId = id; renderHangar(); };
+    $('sector-picker').append(button);
+  }
+}
+
+function best(id) { return Number.isSafeInteger(records[id]) && records[id] > 0 ? records[id] : 0; }
+function renderHangar() {
+  const plane = airframes[planeId];
+  put('stage-role', plane.role.toUpperCase());
+  put('stage-name', plane.name);
+  put('plane-description', plane.description);
+  $('airframe-art').style.setProperty('--airframe-glow', plane.color);
+  $('hull-outline').setAttribute('points', plane.outline);
+  $('hull-outline').setAttribute('stroke', plane.color);
+  $('hull-bright').setAttribute('stop-color', plane.body);
+  $('hull-dark').setAttribute('stop-color', plane.shadow);
+  for (const button of $('plane-picker').children) {
+    const selected = button.dataset.id === planeId;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', selected);
+    button.querySelector('em').textContent = selected ? 'выбран' : '';
+  }
+  for (const button of $('sector-picker').children) {
+    const id = button.dataset.id, selected = id === sectorId;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', selected);
+    button.querySelector('.sector-record').textContent = id === 'free' || !best(id) ? '' : '✦ ' + nfmt.format(best(id));
+  }
+  put('selection-hint', !isFree() && planeId !== 'az' ? 'Зачётный вылет на AZ-01. Выбранный самолёт доступен в свободном небе.' : '');
+}
+
+function openBriefing() {
+  const s = sector();
+  put('briefing-label', 'СЕКТОР ' + s.number + ' / ' + s.label.toUpperCase());
+  put('briefing-title', s.title);
+  put('briefing-description', s.description);
+  put('briefing-plane', flightPlane().name);
+  put('briefing-controls', s.controls);
+  put('briefing-time', s.duration ? s.duration + ' сек' : '∞');
+  $('briefing-bonuses').hidden = isFree();
+  showScreen('briefing', 'briefing-title');
+}
+
+function resize() {
+  const box = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  width = Math.max(1, box.width);
+  height = Math.max(1, box.height);
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (screen === 'flight' && run) render();
+}
+
+function start() {
+  cancelAnimationFrame(frame);
+  keys.clear();
+  pointer = null;
+  firePointer = false;
+  run = {t:0, event:0, nextFree:2, freeIndex:0, x:.5, y:.71, tx:.5, ty:.71, bank:0,
+    energy:100, score:0, targets:0, rings:0, tricks:0, bonuses:0, combo:1, chainEnd:0,
+    missiles:3, shotAt:0, trickAt:0, rollEnd:0, safeUntil:0, objects:[], shots:[], sparks:[], paused:false};
+  messageUntil = 0;
+  $('pause-overlay').hidden = true;
+  $('trick-button').disabled = false;
+  const battle = sector().targets > 0;
+  for (const id of ['target-hud','fire-button','missile-button']) $(id).hidden = !battle;
+  for (const id of ['time-hud','energy-hud']) $(id).hidden = isFree();
+  $('end-free').hidden = !isFree();
+  put('flight-sector', 'СЕКТОР ' + sector().number);
+  put('flight-title', sector().title);
+  showScreen('flight', 'flight-canvas');
+  resize();
+  showMessage('Веди самолёт', battle ? 'Огонь включается при движении пальцем' : 'Наведи самолёт на кольцо', 2.6);
+  hud();
+  last = performance.now();
+  frame = requestAnimationFrame(loop);
+}
+
+function spawn(type, x) {
+  const moving = type === 'enemy' || type === 'ace';
+  run.objects.push({type, x, y:-.075, baseX:x, age:0, speed:moving ? .29 : .245,
+    hp:type === 'ace' ? 2 : 1, dead:false, checked:false});
+}
+
+function showMessage(title, detail, duration = 1.2) {
+  putMessage('span', title);
+  putMessage('small', detail);
+  $('flight-message').classList.remove('hidden');
+  messageUntil = run.t + duration;
+}
+function putMessage(tag, text) { $('flight-message').querySelector(tag).textContent = text; }
+function combo(points) {
+  run.score += points * run.combo;
+  run.combo = Math.min(5, run.combo + 1);
+  run.chainEnd = Math.max(run.chainEnd, run.t + 4);
+}
+function spark(x, y, color, count = 14) {
+  for (let i = 0; i < count; i++) {
+    const angle = i * 2.4, speed = .03 + Math.random() * .14;
+    run.sparks.push({x,y,dx:Math.cos(angle)*speed,dy:Math.sin(angle)*speed,life:.3+Math.random()*.34,color});
+  }
+}
+function collect(o) {
+  o.dead = true;
+  run.bonuses++;
+  if (o.type === 'repair') {
+    const before = run.energy;
+    run.energy = Math.min(100, before + 30);
+    showMessage('Ремонт', before < 100 ? '+' + (run.energy - before) + ' энергии' : 'Энергия полная');
+  } else {
+    run.combo = Math.max(2, run.combo);
+    run.chainEnd = Math.max(run.t, run.chainEnd) + 8;
+    showMessage('Заряд серии', '+8 секунд к серии');
+  }
+  spark(o.x, o.y, '#a5ffcd');
+  tone('bonus');
+}
+function hurt(amount) {
+  if (isFree() || run.safeUntil > run.t) return;
+  run.energy = Math.max(0, run.energy - amount);
+  run.combo = 1;
+  run.chainEnd = 0;
+  run.safeUntil = run.t + .75;
+  spark(run.x, run.y, '#ff886d');
+  showMessage('Столкновение', '−' + amount + ' энергии');
+  tone('hit');
+}
+function trick() {
+  if (!isFlying() || run.t < run.trickAt) return;
+  run.tricks++;
+  run.trickAt = run.t + 2;
+  run.rollEnd = run.t + .48;
+  // Tricks keep a live chain going, but cannot farm a ranked score on their own.
+  if (run.chainEnd > run.t) run.chainEnd = Math.max(run.chainEnd, run.t + 2.5);
+  spark(run.x, run.y, flightPlane().color, 10);
+  showMessage('Бочка', 'Манёвр выполнен');
+  tone('trick');
+}
+function target() {
+  let nearest, distance = Infinity;
+  for (const o of run.objects) {
+    if (o.dead || (o.type !== 'enemy' && o.type !== 'ace') || o.y < .02 || o.y > run.y + .025) continue;
+    const d = Math.hypot(o.x - run.x, o.y - run.y);
+    if (d < distance) { nearest = o; distance = d; }
+  }
+  return nearest;
+}
+function shoot() {
+  const aim = target();
+  run.shots.push({x:run.x,y:run.y-.037,aim,life:.65});
+  run.shotAt = run.t + .24;
+}
+function damage(o, amount) {
+  if (o.dead) return;
+  o.hp -= amount;
+  spark(o.x,o.y,'#ffb278',o.hp > 0 ? 6 : 19);
+  if (o.hp > 0) return;
+  o.dead = true;
+  run.targets++;
+  combo(o.type === 'ace' ? 220 : 120);
+  showMessage(o.type === 'ace' ? 'Лидер сбит' : 'Цель сбита', 'Серия ×' + run.combo);
+  tone('hit');
+}
+function missile() {
+  if (!isFlying() || !sector().targets || !run.missiles) return;
+  const o = target();
+  if (!o) { showMessage('Нет цели', 'Дождись появления метки'); return; }
+  run.missiles--;
+  damage(o, 2);
+  hud();
+}
+function move(dt) {
+  const right = +keys.has('ArrowRight') - +keys.has('ArrowLeft');
+  const down = +keys.has('ArrowDown') - +keys.has('ArrowUp');
+  run.tx = clamp(run.tx + right * dt * .85, .07, .93);
+  run.ty = clamp(run.ty + down * dt * .65, .42, .78);
+  run.bank += (clamp((run.tx-run.x)*4,-.42,.42)-run.bank)*Math.min(1, dt*9);
+  run.x += (run.tx-run.x)*Math.min(1,dt*10);
+  run.y += (run.ty-run.y)*Math.min(1,dt*10);
+}
+
+function step(dt) {
+  run.t += dt;
+  const s = sector();
+  if (run.t >= run.chainEnd) run.combo = 1;
+  move(dt);
+  while (s.events[run.event]?.[0] <= run.t) {
+    const [,type,x] = s.events[run.event++];
+    spawn(type,x);
+  }
+  if (isFree() && run.t >= run.nextFree) {
+    spawn('ring',[.5,.32,.68,.43,.6][run.freeIndex++ % 5]);
+    run.nextFree += 4.5;
+  }
+  if (s.targets && run.t >= run.shotAt && (firePointer || keys.has(' ') || pointer?.touch)) shoot();
+  for (const o of run.objects) {
+    if (o.dead) continue;
+    o.age += dt;
+    o.y += o.speed * dt;
+    if (o.y > 1.14) { o.dead = true; continue; }
+    const dx = Math.abs(o.x - run.x);
+    const dy = Math.abs(o.y - run.y);
+    if (o.type === 'enemy' || o.type === 'ace') {
+      o.x = o.baseX + Math.sin(o.age * (o.type === 'ace' ? 2.6 : 1.8)) * .052;
+      if (dx < .08 && dy < .044) { hurt(24); o.dead = true; }
+    } else if (o.type === 'repair' || o.type === 'series') {
+      if (dx < Math.max(23 / width, .04) && dy < .055) collect(o);
+    } else if (!o.checked && o.y >= run.y) {
+      o.checked = true;
+      const gate = o.type === 'gate';
+      if (dx <= (gate ? .112 : .15)) {
+        run.rings++;
+        combo(gate ? 220 : 160);
+        showMessage(gate ? 'Чистый пролёт' : 'Кольцо пройдено', 'Серия ×' + run.combo);
+        spark(o.x, o.y, '#ffd082');
+        tone('ring');
+      } else {
+        run.combo = 1;
+        run.chainEnd = 0;
+        if (gate) hurt(28);
+        else if (!isFree()) showMessage('Кольцо пропущено', 'Следующее уже на маршруте');
+      }
+    }
+  }
+  for (const shot of run.shots) {
+    shot.life -= dt;
+    if (shot.aim && !shot.aim.dead) {
+      const dx = shot.aim.x-shot.x, dy = shot.aim.y-shot.y, d = Math.hypot(dx,dy);
+      if (d < .035 + dt*1.9) { damage(shot.aim, 1); shot.life = 0; }
+      else { shot.x += dx/d*1.9*dt; shot.y += dy/d*1.9*dt; }
+    } else shot.y -= dt*1.9;
+  }
+  run.objects = run.objects.filter(o => !o.dead);
+  run.shots = run.shots.filter(shot => shot.life > 0 && shot.y > -.1);
+  for (const p of run.sparks) { p.x+=p.dx*dt; p.y+=p.dy*dt; p.life-=dt; }
+  run.sparks = run.sparks.filter(p => p.life > 0);
+  if (run.t >= messageUntil) $('flight-message').classList.add('hidden');
+  hud();
+  if (!isFree()) {
+    if (!run.energy) finish('energy');
+    else if (run.targets >= s.targets && run.rings >= s.rings) finish('success');
+    else if (run.t >= s.duration) finish('timeout');
+  }
+}
+
+function hud() {
+  const s = sector();
+  put('score-value', nfmt.format(run.score));
+  put('target-value', Math.min(run.targets, s.targets) + '/' + s.targets);
+  put('ring-value', s.rings ? Math.min(run.rings, s.rings) + '/' + s.rings : run.rings);
+  put('time-value', Math.max(0, Math.ceil(s.duration - run.t)) + ' с');
+  put('energy-value', run.energy + '%');
+  put('combo-value', '×' + run.combo);
+  put('missile-count', run.missiles);
+  $('missile-button').disabled = run.missiles === 0;
+  $('trick-button').disabled = run.t < run.trickAt;
+}
+
+function finish(reason) {
+  if (screen !== 'flight' || isFree()) return;
+  const success = reason === 'success', s = sector();
+  if (success) run.score += run.energy * 2 + 250;
+  const personalBest = success && run.score > best(sectorId);
+  if (personalBest) {
+    records[sectorId] = run.score;
+    try { localStorage.setItem(storageKey, JSON.stringify(records)); } catch {
+      canSave = false;
+      put('save-status', 'Хранилище браузера недоступно');
+    }
+  }
+  put('result-sector', s.title.toUpperCase());
+  put('result-title', success ? 'Маршрут пройден' : 'Вылет не завершён');
+  put('result-copy', success ? 'Все задачи выполнены.' : reason === 'energy' ? 'Энергия закончилась.' : 'Время вышло. Выполни все задачи до конца отсчёта.');
+  put('result-score', nfmt.format(run.score));
+  put('result-record', personalBest ? (canSave ? 'НОВЫЙ РЕКОРД' : 'НОВЫЙ РЕКОРД В ЭТОЙ СЕССИИ') : best(sectorId) ? 'РЕКОРД: ' + nfmt.format(best(sectorId)) : 'РЕКОРД ОТКРОЕТСЯ ПОСЛЕ УСПЕШНОГО ВЫЛЕТА');
+  $('result-target-row').hidden = !s.targets;
+  put('result-targets', run.targets + ' / ' + s.targets);
+  put('result-rings', run.rings + ' / ' + s.rings);
+  put('result-tricks', run.tricks);
+  put('result-bonuses', run.bonuses);
+  showScreen('result', 'result-title');
+}
+
+function goHangar() {
+  keys.clear();
+  pointer = null;
+  firePointer = false;
+  renderHangar();
+  showScreen('hangar', 'fly-button');
+}
+
+function loop(now) {
+  if (!isFlying()) return;
+  step(Math.min(.05, (now-last)/1000));
+  last = now;
+  if (isFlying()) { render(); frame = requestAnimationFrame(loop); }
+}
+function pause() {
+  if (screen !== 'flight') return;
+  run.paused = !run.paused;
+  $('pause-overlay').hidden = !run.paused;
+  if (run.paused) {
+    cancelAnimationFrame(frame);
+    keys.clear(); pointer = null; firePointer = false;
+    $('resume-button').focus();
+  } else {
+    $('flight-canvas').focus({preventScroll:true});
+    last = performance.now();
+    frame = requestAnimationFrame(loop);
+  }
+}
+function tone(type) {
+  if (!sound || !audio || audio.state !== 'running') return;
+  const o = audio.createOscillator(), g = audio.createGain(), now = audio.currentTime;
+  const plane = flightPlane();
+  o.type = type === 'trick' ? plane.wave : 'sine';
+  const base = type === 'trick' ? plane.tone : {ring:460,bonus:340,hit:120}[type];
+  o.frequency.setValueAtTime(base,now);
+  o.frequency.exponentialRampToValueAtTime(base * (type === 'hit' ? .52 : 2),now+.14);
+  g.gain.setValueAtTime(.075,now);
+  g.gain.exponentialRampToValueAtTime(.001,now+.18);
+  o.connect(g).connect(audio.destination);
+  o.start(); o.stop(now+.19);
+}
+async function toggleSound() {
+  if (!sound) {
+    try { audio ??= new AudioContext(); await audio.resume(); } catch {
+      put('sound-button','Звук недоступен');
+      return;
+    }
+  }
+  sound = !sound;
+  put('sound-button', sound ? 'Звук: вкл.' : 'Звук: выкл.');
+  $('sound-button').setAttribute('aria-pressed', sound);
+}
+
+function point(e) {
+  const box = canvas.getBoundingClientRect();
+  run.tx = clamp((e.clientX-box.left)/width,.07,.93);
+  run.ty = clamp((e.clientY-box.top)/height,.42,.78);
+}
+canvas.addEventListener('pointerdown',e=>{
+  if (!isFlying() || pointer) return;
+  pointer={id:e.pointerId,startY:e.clientY,startX:e.clientX,at:performance.now(),touch:e.pointerType==='touch',tricked:false};
+  canvas.setPointerCapture(e.pointerId);
+  point(e);
+});
+canvas.addEventListener('pointermove',e=>{
+  if (!isFlying() || pointer?.id !== e.pointerId) return;
+  point(e);
+  if (pointer.touch && !pointer.tricked && pointer.startY-e.clientY > 65 && Math.abs(pointer.startX-e.clientX)<40 && performance.now()-pointer.at<350) {
+    pointer.tricked=true; trick();
+  }
+});
+for (const event of ['pointerup','pointercancel','lostpointercapture']) canvas.addEventListener(event,e=>{ if(pointer?.id===e.pointerId)pointer=null; });
+$('fire-button').addEventListener('pointerdown',e=>{
+  if(!isFlying())return;
+  e.preventDefault();
+  $('fire-button').setPointerCapture(e.pointerId);
+  firePointer = true;
+});
+for (const event of ['pointerup','pointercancel','lostpointercapture']) $('fire-button').addEventListener(event,()=>{ firePointer=false; });
+$('fire-button').addEventListener('click',e=>{ if(!e.detail && isFlying())shoot(); });
+window.addEventListener('keydown',e=>{
+  if (screen !== 'flight') return;
+  if (e.key === 'Escape' && !e.repeat) { e.preventDefault(); pause(); return; }
+  if (!isFlying()) return;
+  if (e.key.startsWith('Arrow') || (e.key === ' ' && e.target.tagName !== 'BUTTON')) {
+    e.preventDefault(); keys.add(e.key);
+  }
+  if (!e.repeat && e.code === 'KeyE') trick();
+  if (!e.repeat && e.code === 'KeyR') missile();
+});
+window.addEventListener('keyup',e=>keys.delete(e.key));
+window.addEventListener('resize',()=>{ if (screen === 'flight') resize(); });
+document.addEventListener('visibilitychange',()=>{ if (document.hidden && isFlying()) pause(); });
+$('fly-button').onclick = openBriefing;
+$('start-mission').onclick = $('retry-button').onclick = start;
+$('back-hangar').onclick = $('quit-button').onclick = $('end-free').onclick = $('result-hangar').onclick = goHangar;
+$('pause-button').onclick = $('resume-button').onclick = pause;
+$('trick-button').onclick = trick;
+$('missile-button').onclick = missile;
+$('sound-button').onclick = toggleSound;
+makeChoices();
+renderHangar();
