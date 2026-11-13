@@ -26,8 +26,11 @@ body.in-flight .game-topbar,body.in-flight .game-footer{display:none}
 .mission-hud .hud-cell{padding:4px 5px;min-width:0;flex:1;background:rgba(5,15,29,.77);text-align:center}
 .hud-cell span,.hud-cell b{display:block;white-space:nowrap}
 .hud-cell span{font-size:8px;color:#d2e7f4}.hud-cell b{font-size:13px;font-variant-numeric:tabular-nums}
+.hud-cell small{display:block;color:#ffdb9e;font-size:9px;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums}
 .flight-controls{left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom))}
 .flight-controls .quiet-button{pointer-events:auto;align-self:end}
+.training-controls{display:grid;grid-template-columns:1fr auto 1fr;justify-items:center;row-gap:6px}
+.training-controls .quiet-button{grid-column:1/-1;justify-self:end;min-height:36px;padding:7px 10px}
 .flight-message{max-width:calc(100% - 30px);width:max-content;top:32%;background:rgba(5,17,28,.76)}
 .flight-message.hidden{visibility:hidden}
 .control-button:disabled{opacity:.52;cursor:default}

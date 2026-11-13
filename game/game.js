@@ -15,6 +15,8 @@ const nfmt = new Intl.NumberFormat('ru-RU');
 const put = (id, value) => { const node = $(id); value = String(value); if (node.textContent !== value) node.textContent = value; };
 const sector = () => sectors[sectorId];
 const isFree = () => sectorId === 'free';
+const hasWeapons = () => isFree() || sector().targets > 0;
+const playfieldTop = () => Math.min(.35, 126 / height);
 const flightPlane = () => airframes[isFree() || isUnlocked(planeId) ? planeId : 'az'];
 const isFlying = () => screen === 'flight' && run && !run.paused;
 
@@ -112,17 +114,21 @@ function start() {
   keys.clear();
   pointer = null;
   firePointer = false;
-  run = {t:0, event:0, nextFree:2, freeIndex:0, x:.5, y:.71, tx:.5, ty:.71, bank:0,
-    energy:100, score:0, targets:0, rings:0, tricks:0, bonuses:0, combo:1, chainEnd:0,
-    missiles:3, shotAt:0, trickAt:0, rollEnd:0, safeUntil:0, objects:[], shots:[], sparks:[], paused:false};
+  run = {t:0, event:0, nextFree:2, nextDummy:.8, freeIndex:0, dummyIndex:0,
+    x:.5, y:.71, tx:.5, ty:.71, bank:0, energy:100, score:0, targets:0, rings:0,
+    tricks:0, perfectRolls:0, bonuses:0, combo:1, chainEnd:0, leader:false,
+    missiles:3, shotAt:0, missileAt:0, trickAt:0, rollEnd:0, safeUntil:0,
+    objects:[], shots:[], sparks:[], paused:false};
   messageUntil = 0;
   $('pause-overlay').hidden = true;
   $('trick-button').disabled = false;
-  const battle = sector().targets > 0;
-  for (const id of ['target-hud','fire-button','missile-button']) $(id).hidden = !battle;
+  $('target-hud').hidden = !sector().targets;
+  for (const id of ['fire-button','missile-button']) $(id).hidden = !hasWeapons();
+  $('leader-hud').hidden = !sector().requiresLeader;
+  $('flight-controls').classList.toggle('training-controls', isFree());
   for (const id of ['time-hud','energy-hud']) $(id).hidden = isFree();
   $('end-free').hidden = !isFree();
-  const returnLabel = briefingBack === 'premium' ? 'В премиум-ангар' : 'В ангар';
+  const returnLabel = briefingBack === 'premium' ? 'К витрине' : 'В ангар';
   put('end-free', returnLabel);
   put('quit-button', returnLabel);
   put('flight-sector', 'СЕКТОР ' + sector().number);
@@ -130,15 +136,16 @@ function start() {
   showScreen('flight', 'flight-canvas');
   resize();
   startEngine();
-  showMessage('Веди самолёт', battle ? 'Огонь включается при движении пальцем' : 'Наведи самолёт на кольцо', 2.6);
+  showMessage('Веди самолёт', isFree() ? 'Кольца и учебные мишени впереди' :
+    hasWeapons() ? 'На телефоне огонь включается при касании' : 'Совмести самолёт с центром кольца', 2.6);
   hud();
   last = performance.now();
   frame = requestAnimationFrame(loop);
 }
 
 function spawn(type, x) {
-  const moving = type === 'enemy' || type === 'ace';
-  run.objects.push({type, x, y:-.075, baseX:x, age:0, speed:moving ? .29 : .245,
+  const moving = type === 'enemy' || type === 'ace' || type === 'dummy';
+  run.objects.push({type, x, y:playfieldTop() - .045, baseX:x, age:0, speed:moving ? .29 : .245,
     hp:type === 'ace' ? 2 : 1, dead:false, checked:false});
 }
 
@@ -196,19 +203,31 @@ function trick() {
   showMessage('Бочка', 'Манёвр выполнен');
   tone('trick');
 }
+function canRollThrough(o) {
+  return !o.checked && (o.type === 'ring' || o.type === 'gate') &&
+    o.y <= run.y + .025 && run.y - o.y <= .115 && Math.abs(o.x - run.x) <= .078;
+}
+
+function isTarget(o) {
+  return o.type === 'enemy' || o.type === 'ace' || o.type === 'dummy';
+}
+
 function target() {
   let nearest, distance = Infinity;
   for (const o of run.objects) {
-    if (o.dead || (o.type !== 'enemy' && o.type !== 'ace') || o.y < .02 || o.y > run.y + .025) continue;
+    if (o.dead || !isTarget(o) || o.y < playfieldTop() || o.y > run.y + .025) continue;
+    if (sectorId === 'islands' && Math.abs(o.x - run.x) > .24) continue;
     const d = Math.hypot(o.x - run.x, o.y - run.y);
     if (d < distance) { nearest = o; distance = d; }
   }
   return nearest;
 }
 function shoot() {
+  if (run.t < run.shotAt) return;
   const aim = target();
-  run.shots.push({x:run.x,y:run.y-.037,aim,life:.65});
+  run.shots.push({kind:'shell',x:run.x,y:run.y-.06,dx:0,dy:-1,aim,life:.75});
   run.shotAt = run.t + .24;
+  tone('shell');
 }
 function damage(o, amount) {
   if (o.dead) return;
@@ -216,17 +235,24 @@ function damage(o, amount) {
   spark(o.x,o.y,'#ffb278',o.hp > 0 ? 6 : 19);
   if (o.hp > 0) return;
   o.dead = true;
-  run.targets++;
+  if (o.type !== 'dummy') run.targets++;
+  if (o.type === 'ace') run.leader = true;
   combo(o.type === 'ace' ? 220 : 120);
-  showMessage(o.type === 'ace' ? 'Лидер сбит' : 'Цель сбита', 'Серия ×' + run.combo);
+  showMessage(o.type === 'ace' ? 'Лидер сбит' : o.type === 'dummy' ? 'Мишень поражена' : 'Цель сбита', 'Серия ×' + run.combo);
   tone('hit');
 }
 function missile() {
-  if (!isFlying() || !sector().targets || !run.missiles) return;
+  if (!isFlying() || !hasWeapons() || run.t < run.missileAt || (!isFree() && !run.missiles)) return;
   const o = target();
-  if (!o) { showMessage('Нет цели', 'Дождись появления метки'); return; }
-  run.missiles--;
-  damage(o, 2);
+  if (!o && !isFree()) {
+    showMessage('Нет захвата', sectorId === 'islands' ? 'Сместись ближе к линии цели' : 'Дождись метки над целью');
+    return;
+  }
+  if (!isFree()) run.missiles--;
+  run.missileAt = run.t + .45;
+  run.shots.push({kind:'rocket',x:run.x,y:run.y-.045,dx:0,dy:-1,aim:o,life:1.65});
+  showMessage('Ракета запущена', o ? 'Летит к цели' : 'Учебный запуск', .85);
+  tone('rocket');
   hud();
 }
 function move(dt) {
@@ -252,7 +278,11 @@ function step(dt) {
     spawn('ring',[.5,.32,.68,.43,.6][run.freeIndex++ % 5]);
     run.nextFree += 4.5;
   }
-  if (s.targets && run.t >= run.shotAt && (firePointer || keys.has(' ') || pointer?.touch)) shoot();
+  if (isFree() && run.t >= run.nextDummy) {
+    spawn('dummy',[.62,.34,.71,.5][run.dummyIndex++ % 4]);
+    run.nextDummy += 5;
+  }
+  if (hasWeapons() && (firePointer || keys.has(' ') || pointer?.touch)) shoot();
   for (const o of run.objects) {
     if (o.dead) continue;
     o.age += dt;
@@ -260,9 +290,9 @@ function step(dt) {
     if (o.y > 1.14) { o.dead = true; continue; }
     const dx = Math.abs(o.x - run.x);
     const dy = Math.abs(o.y - run.y);
-    if (o.type === 'enemy' || o.type === 'ace') {
+    if (isTarget(o)) {
       o.x = o.baseX + Math.sin(o.age * (o.type === 'ace' ? 2.6 : 1.8)) * .052;
-      if (dx < .08 && dy < .044) { hurt(24); o.dead = true; }
+      if (o.type !== 'dummy' && dx < .08 && dy < .044) { hurt(24); o.dead = true; }
     } else if (o.type === 'repair' || o.type === 'series') {
       if (dx < Math.max(23 / width, .04) && dy < .055) collect(o);
     } else if (!o.checked && o.y >= run.y) {
@@ -271,7 +301,13 @@ function step(dt) {
       if (dx <= (gate ? .112 : .15)) {
         run.rings++;
         combo(gate ? 220 : 160);
-        showMessage(gate ? 'Чистый пролёт' : 'Кольцо пройдено', 'Серия ×' + run.combo);
+        if (run.rollEnd >= run.t && dx <= .078) {
+          run.perfectRolls++;
+          run.score += 120;
+          showMessage('Бочка в кольце', '+120 очков · серия ×' + run.combo);
+        } else {
+          showMessage(gate ? 'Чистый пролёт' : 'Кольцо пройдено', 'Серия ×' + run.combo);
+        }
         spark(o.x, o.y, '#ffd082');
         tone('ring');
       } else {
@@ -284,11 +320,21 @@ function step(dt) {
   }
   for (const shot of run.shots) {
     shot.life -= dt;
+    if (shot.life <= 0) continue;
+    const rocket = shot.kind === 'rocket';
+    const speed = rocket ? .86 : 1.9;
     if (shot.aim && !shot.aim.dead) {
       const dx = shot.aim.x-shot.x, dy = shot.aim.y-shot.y, d = Math.hypot(dx,dy);
-      if (d < .035 + dt*1.9) { damage(shot.aim, 1); shot.life = 0; }
-      else { shot.x += dx/d*1.9*dt; shot.y += dy/d*1.9*dt; }
-    } else shot.y -= dt*1.9;
+      if (d < .026 + dt*speed) { damage(shot.aim, rocket ? 2 : 1); shot.life = 0; continue; }
+      shot.dx = dx/d;
+      shot.dy = dy/d;
+    } else if (rocket) {
+      shot.aim = target();
+      shot.dx *= .92;
+      shot.dy = -1;
+    }
+    shot.x += shot.dx*speed*dt;
+    shot.y += shot.dy*speed*dt;
   }
   run.objects = run.objects.filter(o => !o.dead);
   run.shots = run.shots.filter(shot => shot.life > 0 && shot.y > -.1);
@@ -298,7 +344,7 @@ function step(dt) {
   hud();
   if (!isFree()) {
     if (!run.energy) finish('energy');
-    else if (run.targets >= s.targets && run.rings >= s.rings) finish('success');
+    else if (run.targets >= s.targets && run.rings >= s.rings && (!s.requiresLeader || run.leader)) finish('success');
     else if (run.t >= s.duration) finish('timeout');
   }
 }
@@ -311,8 +357,11 @@ function hud() {
   put('time-value', Math.max(0, Math.ceil(s.duration - run.t)) + ' с');
   put('energy-value', run.energy + '%');
   put('combo-value', '×' + run.combo);
-  put('missile-count', run.missiles);
-  $('missile-button').disabled = run.missiles === 0;
+  const seconds = Math.max(0, Math.ceil(run.chainEnd - run.t));
+  put('combo-time', seconds ? seconds + ' с' : '—');
+  put('leader-value', run.leader ? '✓' : '—');
+  put('missile-count', isFree() ? '∞' : run.missiles);
+  $('missile-button').disabled = run.t < run.missileAt || (!isFree() && run.missiles === 0);
   $('trick-button').disabled = run.t < run.trickAt;
 }
 
@@ -330,14 +379,30 @@ function finish(reason) {
   }
   put('result-sector', s.title.toUpperCase());
   put('result-title', success ? 'Маршрут пройден' : 'Вылет не завершён');
-  put('result-copy', success ? 'Все задачи выполнены.' : reason === 'energy' ? 'Энергия закончилась.' : 'Время вышло. Выполни все задачи до конца отсчёта.');
+  const missing = [];
+  if (run.targets < s.targets) missing.push('цели: ' + run.targets + ' из ' + s.targets);
+  if (run.rings < s.rings) missing.push('кольца: ' + run.rings + ' из ' + s.rings);
+  if (s.requiresLeader && !run.leader) missing.push('лидер не сбит');
+  const outcome = reason === 'energy' ? 'Энергия закончилась.' : 'Время вышло.';
+  put('result-copy', success ? 'Все задачи выполнены.' : outcome + (missing.length ? ' До зачёта — ' + missing.join(', ') + '.' : ''));
   put('result-score', nfmt.format(run.score));
   put('result-record', personalBest ? (canSave ? 'НОВЫЙ РЕКОРД' : 'НОВЫЙ РЕКОРД В ЭТОЙ СЕССИИ') : best(sectorId) ? 'РЕКОРД: ' + nfmt.format(best(sectorId)) : 'РЕКОРД ОТКРОЕТСЯ ПОСЛЕ УСПЕШНОГО ВЫЛЕТА');
   $('result-target-row').hidden = !s.targets;
   put('result-targets', run.targets + ' / ' + s.targets);
   put('result-rings', run.rings + ' / ' + s.rings);
   put('result-tricks', run.tricks);
+  put('result-perfect', run.perfectRolls);
   put('result-bonuses', run.bonuses);
+  const next = {light:'canyon', canyon:'islands'}[sectorId];
+  $('next-sector').hidden = !success || !next;
+  if (success && next) {
+    put('next-sector', 'Дальше: ' + sectors[next].title + ' →');
+    $('next-sector').onclick = () => {
+      sectorId = next;
+      briefingBack = 'hangar';
+      openBriefing();
+    };
+  }
   showScreen('result', 'result-title');
 }
 
@@ -406,10 +471,10 @@ function tone(type) {
   const o = audio.createOscillator(), g = audio.createGain(), now = audio.currentTime;
   const plane = flightPlane();
   o.type = type === 'trick' ? plane.wave : 'sine';
-  const base = type === 'trick' ? plane.tone : {ring:460,bonus:340,hit:120}[type];
+  const base = type === 'trick' ? plane.tone : {ring:460,bonus:340,hit:120,shell:180,rocket:85}[type];
   o.frequency.setValueAtTime(base,now);
   o.frequency.exponentialRampToValueAtTime(base * (type === 'hit' ? .52 : 2),now+.14);
-  g.gain.setValueAtTime(.075,now);
+  g.gain.setValueAtTime(type === 'shell' ? .028 : .075,now);
   g.gain.exponentialRampToValueAtTime(.001,now+.18);
   o.connect(g).connect(audio.destination);
   o.start(); o.stop(now+.19);
@@ -450,9 +515,10 @@ $('fire-button').addEventListener('pointerdown',e=>{
   e.preventDefault();
   $('fire-button').setPointerCapture(e.pointerId);
   firePointer = true;
+  shoot();
 });
 for (const event of ['pointerup','pointercancel','lostpointercapture']) $('fire-button').addEventListener(event,()=>{ firePointer=false; });
-$('fire-button').addEventListener('click',e=>{ if(!e.detail && isFlying())shoot(); });
+$('fire-button').addEventListener('click',()=>{ if(isFlying() && hasWeapons())shoot(); });
 window.addEventListener('keydown',e=>{
   if (screen !== 'flight') return;
   if (e.key === 'Escape' && !e.repeat) { e.preventDefault(); pause(); return; }

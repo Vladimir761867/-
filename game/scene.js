@@ -9,7 +9,8 @@ function airframePaths(plane) {
     const panels = (plane.panels || []).map(panel => ({...panel, path:new Path2D(panel.shape)}));
     const canopy = new Path2D(plane.canopy || 'M0 -32 5 -11 0 0 -5 -11Z');
     const lights = new Path2D(plane.lights || 'M-5 22 -5 28 M5 22 5 28');
-    hullPaths.set(plane, {outline, panels, canopy, lights});
+    const pods = plane.pods ? new Path2D(plane.pods) : null;
+    hullPaths.set(plane, {outline, panels, canopy, lights, pods});
   }
   return hullPaths.get(plane);
 }
@@ -31,8 +32,13 @@ function render() {
   ctx.fill();
   drawClouds();
   drawLandscape(horizon);
+  ctx.save();
+  const entry = playfieldTop()*height;
+  ctx.beginPath();
+  ctx.rect(0,entry,width,height-entry);
+  ctx.clip();
   for (const o of run.objects) drawObject(o);
-  const lock = sector().targets ? target() : null;
+  const lock = hasWeapons() ? target() : null;
   if (lock) {
     ctx.strokeStyle = '#ffe4b5';
     ctx.lineWidth = 1.5;
@@ -41,16 +47,35 @@ function render() {
       ctx.beginPath(); ctx.moveTo(x+dx*16,y+dy*24); ctx.lineTo(x+dx*24,y+dy*24); ctx.lineTo(x+dx*24,y+dy*16); ctx.stroke();
     }
   }
-  ctx.strokeStyle='#ffe8b7';
-  ctx.lineWidth=2;
-  for(const shot of run.shots) {
-    ctx.beginPath();ctx.moveTo(shot.x*width,shot.y*height);ctx.lineTo(shot.x*width,shot.y*height+12);ctx.stroke();
-  }
+  for (const shot of run.shots) drawShot(shot);
   drawAirframe();
   for(const p of run.sparks) {
     ctx.globalAlpha = Math.min(1,p.life*2.4); ctx.fillStyle=p.color; ctx.fillRect(p.x*width,p.y*height,3,3);
   }
   ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+function drawShot(shot) {
+  const p = flightPlane();
+  const rocket = shot.kind === 'rocket';
+  const length = rocket ? 38 : 18;
+  const color = rocket ? p.rocketColor || '#ffb472' : p.shotColor || '#ffe8b7';
+  const angle = Math.atan2(shot.dy*height, shot.dx*width);
+  ctx.save();
+  ctx.translate(shot.x*width,shot.y*height);
+  ctx.rotate(angle);
+  const trail = ctx.createLinearGradient(-length,0,0,0);
+  trail.addColorStop(0,'transparent');
+  trail.addColorStop(1,color);
+  ctx.strokeStyle=trail;
+  ctx.lineWidth=rocket ? 5 : 2.5;
+  ctx.beginPath(); ctx.moveTo(-length,0); ctx.lineTo(0,0); ctx.stroke();
+  ctx.fillStyle='#fff4dd';
+  if (rocket) {
+    ctx.beginPath(); ctx.moveTo(9,0); ctx.lineTo(1,-3); ctx.lineTo(-6,-3); ctx.lineTo(-6,3); ctx.lineTo(1,3); ctx.closePath(); ctx.fill();
+  } else ctx.fillRect(-2,-1,5,2);
+  ctx.restore();
 }
 function drawClouds() {
   ctx.save();
@@ -66,6 +91,7 @@ function drawClouds() {
 }
 function drawLandscape(horizon) {
   const canyon = sectorId==='canyon';
+  const islands = sectorId==='islands';
   for(let layer=0;layer<2;layer++) {
     ctx.fillStyle=sector().terrain[layer];
     ctx.globalAlpha=.8;
@@ -87,6 +113,29 @@ function drawLandscape(horizon) {
     const y=horizon+Math.pow((i*.091+run.t*.17)%1,1.8)*height*.53;
     ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y+height*.024);ctx.stroke();
   }
+  if (islands) drawIslands(horizon);
+}
+
+function drawIslands(horizon) {
+  for (let i=0;i<5;i++) {
+    const depth = (i*.23 + run.t*.048)%1;
+    const x = width*(.12 + (i*.317)% .77);
+    const y = horizon + depth*height*.43;
+    const size = width*(.045 + depth*.13);
+    ctx.fillStyle='#101b31';
+    ctx.beginPath();
+    ctx.moveTo(x-size,y);
+    ctx.lineTo(x-size*.7,y-size*.13);
+    ctx.lineTo(x-size*.25,y-size*.32);
+    ctx.lineTo(x+size*.22,y-size*.27);
+    ctx.lineTo(x+size*.74,y-size*.09);
+    ctx.lineTo(x+size,y);
+    ctx.lineTo(x+size*.56,y+size*.16);
+    ctx.lineTo(x-size*.53,y+size*.13);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#ffca90';
+    for (let j=0;j<3;j++) ctx.fillRect(x+size*(j*.19-.31),y-size*.08,2,2);
+  }
 }
 function drawObject(o) {
   const x=o.x*width, y=o.y*height;
@@ -99,6 +148,11 @@ function drawObject(o) {
     ctx.beginPath();ctx.ellipse(0,0,radius,Math.min(29,radius*.5),0,0,Math.PI*2);ctx.stroke();
     ctx.shadowBlur=0;ctx.strokeStyle='#fff0bd';ctx.lineWidth=1;
     ctx.beginPath();ctx.ellipse(0,0,radius*.9,Math.min(24,radius*.42),0,0,Math.PI*2);ctx.stroke();
+    if (canRollThrough(o)) {
+      ctx.strokeStyle='#b2fff2';
+      ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(-7,0);ctx.lineTo(0,-6);ctx.lineTo(7,0);ctx.lineTo(0,6);ctx.closePath();ctx.stroke();
+    }
   } else if(o.type==='repair'||o.type==='series'){
     ctx.rotate(Math.PI/4);
     ctx.fillStyle=o.type==='repair'?'#123e3f':'#4b315c';ctx.strokeStyle=o.type==='repair'?'#a4ffd0':'#e4b9ff';ctx.lineWidth=2;
@@ -106,12 +160,16 @@ function drawObject(o) {
     ctx.rotate(-Math.PI/4);ctx.fillStyle=ctx.strokeStyle;ctx.font='bold 17px system-ui';
     ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(o.type==='repair'?'✚':'✦',0,0);
   } else {
-    ctx.fillStyle=o.type==='ace'?'#ffe1a2':'#ff8e87';
+    ctx.fillStyle=o.type==='ace'?'#ffe1a2':o.type==='dummy'?'#b2fff2':'#ff8e87';
     ctx.strokeStyle='#301b34';ctx.lineWidth=2;
     ctx.beginPath();ctx.moveTo(0,17);ctx.lineTo(-21,-10);ctx.lineTo(-7,-7);ctx.lineTo(0,-16);ctx.lineTo(7,-7);ctx.lineTo(21,-10);ctx.closePath();
     ctx.stroke();ctx.fill();
     ctx.fillStyle='#552f43';ctx.fillRect(-3,-4,6,12);
     if(o.type==='ace'){ctx.fillStyle='#fff5cb';ctx.fillRect(-8,-22,o.hp*8,2);}
+    if(o.type==='dummy'){
+      ctx.strokeStyle='#b2fff2';ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(0,0,24,0,Math.PI*2);ctx.stroke();
+    }
   }
   ctx.restore();
 }
@@ -131,7 +189,7 @@ function drawAirframe() {
   const p=flightPlane();
   const paths = airframePaths(p);
   ctx.save();ctx.translate(run.x*width,run.y*height);ctx.rotate(run.bank);
-  const scale = clamp(width/440,.55,.95);
+  const scale = clamp(width/375,.61,1.03);
   ctx.scale(scale, scale);
   if (p.roll && run.rollEnd + .65 > run.t && run.rollEnd > 0 && !reduceMotion.matches) {
     drawRollEffect(p, 1 - (run.rollEnd + .65 - run.t) / 1.13);
@@ -169,8 +227,20 @@ function drawAirframe() {
   ctx.lineWidth = 1.2;
   ctx.lineJoin = 'round';
   ctx.stroke(paths.outline);
+  if (paths.pods) {
+    ctx.fillStyle = '#26344a';
+    ctx.lineWidth = .7;
+    ctx.fill(paths.pods);
+    ctx.stroke(paths.pods);
+  }
   ctx.fillStyle = '#081827';
   ctx.fill(paths.canopy);
+  ctx.strokeStyle = '#c1ddf1';
+  ctx.globalAlpha = opacity*.6;
+  ctx.lineWidth = .95;
+  ctx.beginPath();ctx.moveTo(0,-27);ctx.lineTo(2.6,-16);ctx.lineTo(1.8,-10);ctx.stroke();
+  ctx.globalAlpha = opacity;
+  ctx.strokeStyle = p.color;
   ctx.lineWidth = 1.6;
   ctx.stroke(paths.lights);
   ctx.restore();
@@ -181,8 +251,8 @@ function drawRollEffect(plane, progress) {
   ctx.globalAlpha = Math.sin(clamp(progress,0,1)*Math.PI)*.88;
   ctx.strokeStyle = plane.color;
   ctx.shadowColor = plane.color;
-  ctx.shadowBlur = 8;
-  ctx.lineWidth = 2.6;
+  ctx.shadowBlur = 12;
+  ctx.lineWidth = 3.2;
   ctx.beginPath();
   if (plane.roll === 'arc') {
     ctx.ellipse(0,34+progress*26,58,20,-.47,Math.PI*.03,Math.PI*(.85+progress));

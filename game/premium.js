@@ -22,7 +22,9 @@ function aircraftMarkup(plane, id) {
     </linearGradient></defs>
     <polygon points="${plane.outline}" fill="url(#${id})" stroke="${plane.color}" stroke-width=".9" stroke-linejoin="round"/>
     ${panels}
+    ${plane.pods ? `<path d="${plane.pods}" fill="#26344a" stroke="${plane.color}" stroke-opacity=".7" stroke-width=".65"/>` : ''}
     <path d="${plane.canopy || 'M0 -32 5 -11 0 0 -5 -11Z'}" fill="#081827" stroke="${plane.color}" stroke-opacity=".6" stroke-width=".65"/>
+    <path d="M0 -27 2.6 -16 1.8 -10" fill="none" stroke="#d9edff" stroke-opacity=".48" stroke-width=".7"/>
     <path d="${plane.lights || 'M-5 22 -5 28 M5 22 5 28'}" fill="none" stroke="${plane.color}" stroke-linecap="round" stroke-width="1.35"/>
   </svg>`;
 }
@@ -39,7 +41,7 @@ function renderPremium() {
         <p>${plane.description}</p><p class="effect-copy">${plane.effect}</p>
         <p class="offer-price">${owned ? 'Открыт для всех маршрутов' : price(offer)}</p>
         <div class="premium-actions">
-          <button type="button" class="primary-button" data-try="${offer.id}">Попробовать бесплатно</button>
+          <button type="button" class="primary-button" data-try="${offer.id}">Испытать в полёте</button>
           <button type="button" class="quiet-button" data-offer="${offer.id}">${owned ? 'Выбрать для вылета' : 'Открыть в тесте'}</button>
         </div>
       </div>

@@ -6,15 +6,15 @@
   <meta name="theme-color" content="#07111f">
   <title>Afterburn Skies — Форсаж Небес</title>
   <link rel="stylesheet" href="game.css?v=030">
-  <link rel="stylesheet" href="sectors.css?v=040">
-  <link rel="stylesheet" href="premium.css?v=040">
+  <link rel="stylesheet" href="sectors.css?v=050">
+  <link rel="stylesheet" href="premium.css?v=050">
 </head>
 <body>
   <div class="game-shell">
     <header class="game-topbar">
       <a class="back-link" href="../" aria-label="Командный центр">← <span>Командный центр</span></a>
       <div class="game-brand"><span class="brand-spark" aria-hidden="true">✦</span><span>AFTERBURN <b>SKIES</b></span></div>
-      <span class="build-label">СБОРКА <b>0.4</b></span>
+      <span class="build-label">СБОРКА <b>0.5</b></span>
     </header>
     <main>
       <section id="hangar-screen" class="game-screen active" aria-labelledby="hangar-title">
@@ -78,10 +78,11 @@
             <div class="hud-cell"><span>КОЛЬЦА</span><b id="ring-value"></b></div>
             <div class="hud-cell" id="time-hud"><span>ВРЕМЯ</span><b id="time-value"></b></div>
             <div class="hud-cell" id="energy-hud"><span>ЭНЕРГИЯ</span><b id="energy-value"></b></div>
-            <div class="hud-cell"><span>СЕРИЯ</span><b id="combo-value"></b></div>
+            <div class="hud-cell"><span>СЕРИЯ</span><b id="combo-value"></b><small id="combo-time"></small></div>
+            <div class="hud-cell" id="leader-hud" hidden><span>ЛИДЕР</span><b id="leader-value"></b></div>
           </div>
           <div id="flight-message" class="flight-message hidden" role="status"><span></span><small></small></div>
-          <div class="flight-controls">
+          <div class="flight-controls" id="flight-controls">
             <button id="trick-button" class="control-button trick" type="button"><span aria-hidden="true">↻</span><small>ТРЮК</small></button>
             <button id="fire-button" class="control-button fire" type="button"><span aria-hidden="true">●</span><small>ОГОНЬ</small></button>
             <button id="missile-button" class="control-button missile" type="button"><span aria-hidden="true">◈</span><small>РАКЕТА <b id="missile-count">3</b></small></button>
@@ -100,17 +101,18 @@
             <div id="result-target-row"><span>Цели</span><b id="result-targets"></b></div>
             <div><span>Кольца</span><b id="result-rings"></b></div>
             <div><span>Трюки</span><b id="result-tricks"></b></div>
+            <div><span>Бочки в кольце</span><b id="result-perfect"></b></div>
             <div><span>Бонусы</span><b id="result-bonuses"></b></div>
           </div>
-          <div class="result-actions"><button id="retry-button" class="primary-button" type="button">ПОВТОРИТЬ <span aria-hidden="true">↻</span></button><button id="result-hangar" class="text-button" type="button">← В ангар</button></div>
+          <div class="result-actions"><button id="next-sector" class="primary-button" type="button" hidden></button><button id="retry-button" class="quiet-button" type="button">ПОВТОРИТЬ <span aria-hidden="true">↻</span></button><button id="result-hangar" class="text-button" type="button">← В ангар</button></div>
         </div>
       </section>
     </main>
-    <footer class="game-footer"><span>AFTERBURN SKIES / 0.4</span><a href="../mockups/">Макеты</a><span id="save-status">Рекорды хранятся в этом браузере</span></footer>
+    <footer class="game-footer"><span>AFTERBURN SKIES / 0.5</span><a href="../mockups/">Макеты</a><span id="save-status">Рекорды хранятся в этом браузере</span></footer>
   </div>
-  <script src="content.js?v=040"></script>
-  <script src="scene.js?v=040"></script>
-  <script src="premium.js?v=040"></script>
-  <script src="game.js?v=040"></script>
+  <script src="content.js?v=050"></script>
+  <script src="scene.js?v=050"></script>
+  <script src="premium.js?v=050"></script>
+  <script src="game.js?v=050"></script>
 </body>
 </html>
